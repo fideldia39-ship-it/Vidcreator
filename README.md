@@ -22,6 +22,10 @@ Se instala como app (PWA) desde el navegador. Tus videos, fotos y audios quedan 
 - **Fotos y tomas:** lista de tomas a grabar, fotos y videos con su origen, editor de fotos.
 - **Miniatura, Títulos, Shorts** (2 o 3 Shorts por video, con miniatura 9:16), **Originalidad** y **Publicar** (etapa, fecha, checklist, descripción, capítulos automáticos, puntaje SEO y resultados a los 7 días).
 - **Exportar video:** desde "Ver borrador" crea el video horizontal o vertical en el teléfono, con fotos o clips, subtítulos y música que baja sola cuando hablas.
+- **Varios canales:** cada uno con sus videos, tema, meta, ganchos y pilares.
+- **Plan de 30 días:** defines tus pilares y la app agenda los videos en el calendario.
+- **3 variantes de miniatura** para la función “Probar y comparar” de YouTube.
+- **Bienvenida** en el primer uso y **tema claro u oscuro** en Ajustes.
 - **Aviso de versión nueva:** cuando se publica un cambio aparece el botón Actualizar.
 
 ## Pruebas

@@ -271,6 +271,13 @@ mark{background:color-mix(in srgb,var(--warn) 30%,transparent);color:var(--fg);b
 .danger{color:var(--bad)}
 
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:40;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;max-width:min(92vw,460px);text-align:center;box-shadow:0 8px 24px rgb(0 0 0/.3)}
+.chanbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:700;font-size:15px;font-family:var(--f-display);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob{display:grid;justify-items:center;gap:12px;text-align:center;padding-block:10px 4px}
+.ob h3{font-size:22px}
+.ob p{color:var(--muted);max-width:40ch}
+.ob-dots{display:flex;gap:6px}
+.ob-dots i{width:8px;height:8px;border-radius:99px;background:var(--line);transition:width .2s}
+.ob-dots i.on{width:22px;background:var(--accent)}
 #upd{position:fixed;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top,0px));z-index:45;display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-radius:14px;background:var(--surface);border:1px solid var(--accent);box-shadow:0 8px 24px rgb(0 0 0/.35);font-size:14px;font-weight:600;width:max-content;max-width:calc(100vw - 32px)}
 .skel{height:76px;border-radius:var(--r);background:var(--surface);margin-bottom:10px}
 .kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
@@ -329,7 +336,7 @@ input[type=date]{width:100%;background:var(--surface);border:1px solid var(--lin
 
 <script>
 "use strict";
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 /* =========================================================
    VidCreator — app instalable (PWA)
    Datos en el teléfono (IndexedDB). IA y voces IA vía /api (Vercel).
@@ -390,13 +397,22 @@ const LOGO = '<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect wid
 const S = {
   docs: {}, loaded: false, view: "home", pid: null, tab: "guion",
   media: {}, takes: {}, imgCache: {}, suggest: {}, busy: {}, sheet: null, ed: null, au: null, rec: null,
-  status: undefined, voices: null, voiceMode: "mia", ttsPart: "all", installEvt: null,
+  channelId: lsGet("vc_channel") || "main", status: undefined, voices: null, voiceMode: "mia", ttsPart: "all", installEvt: null,
   ex: { vertical: false, subs: true, music: true }, lastExport: null
 };
 const TABS = [["guion", "Guión"], ["voz", "Voz"], ["media", "Fotos y tomas"], ["mini", "Miniatura"], ["titulos", "Títulos"], ["shorts", "Shorts"], ["orig", "Originalidad"], ["publicar", "Publicar"]];
 const cur = () => (S.pid && S.docs[S.pid] && S.docs[S.pid].kind === "project") ? Object.assign(S.docs[S.pid], { id: S.pid }) : null;
-const projects = () => Object.keys(S.docs).filter(id => S.docs[id].kind === "project").map(id => Object.assign(S.docs[id], { id })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 const settings = () => S.docs.settings || (S.docs.settings = { kind: "settings" });
+/* canales: cada uno con sus videos, tema, meta, ganchos y pilares */
+function channels() {
+  const st = settings();
+  if (!Array.isArray(st.channels) || !st.channels.length) st.channels = [{ id: "main", name: "Mi canal", niche: st.niche || "", weeklyGoal: st.weeklyGoal || 2, hooks: st.hooks || [], pillars: "" }];
+  return st.channels;
+}
+const chan = () => { const cs = channels(); return cs.find(c => c.id === S.channelId) || cs[0]; };
+const chanOf = d => d.channel || "main";
+const projects = () => { const cid = chan().id; return Object.keys(S.docs).filter(id => S.docs[id].kind === "project" && chanOf(S.docs[id]) === cid).map(id => Object.assign(S.docs[id], { id })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); };
+const chanCount = c => Object.values(S.docs).filter(d => d.kind === "project" && chanOf(d) === c.id).length;
 
 /* ---------- almacenamiento en el teléfono (IndexedDB) ---------- */
 const DB = {
@@ -579,7 +595,7 @@ function newProject(extra) {
     kind: "project", name: "Video sin título", topic: "", voice: "propia", script: "",
     thumb: { l1: "", l2: "", layout: "izq", color: "#3EE6A0", dark: 45, bgId: "" },
     media: [], takes: [], titles: [], title: "", description: "", tagsText: "",
-    createdAt: now, updatedAt: now
+    channel: chan().id, createdAt: now, updatedAt: now
   }, extra || {});
 }
 function seed() {
@@ -876,6 +892,21 @@ function speechText(p, t) {
   if (t && t.text) return t.text;
   if (t && t.part && t.part !== "all") return sectionText(p.script, t.part);
   return cleanSpeech(p.script);
+}
+
+/* ---------- plan de 30 días ---------- */
+const planCount = perWeek => Math.min(30, Math.max(4, Math.round(perWeek * 30 / 7)));
+function planDates(startIso, perWeek, count) {
+  const days = { 1: [4], 2: [2, 5], 3: [1, 3, 5], 5: [1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] }[perWeek] || [2, 5];
+  const [y, m, d] = (startIso || todayISO()).split("-").map(Number); const dt = new Date(y, m - 1, d); const out = [];
+  for (let i = 0; i < 120 && out.length < count; i++) { if (days.includes(dt.getDay())) out.push(isoOf(dt)); dt.setDate(dt.getDate() + 1); }
+  return out;
+}
+function promptPlan(niche, pillars, n, existing) {
+  return "Arma un plan de contenido de 30 días para un canal de YouTube en español sobre: " + niche + ".\nPilares del canal: " + pillars.join("; ") + ".\n" +
+    "Necesito exactamente " + n + " videos, repartidos entre los pilares en rotación. Agrúpalos en pequeñas series (2 o 3 videos relacionados que se recomiendan entre sí). Cada video debe poder contarse desde la experiencia propia del creador, con un ángulo específico; evita temas genéricos.\n" +
+    (existing ? "No repitas estas ideas que ya tiene: " + existing + "\n" : "") +
+    'Formato: JSON array de ' + n + ' elementos, en el orden de publicación: [{"titulo": "título provisional", "pilar": "uno de los pilares, escrito igual", "formato": "historia|tutorial|lista|error|comparacion", "angulo": "qué lo hace distinto, máximo 15 palabras"}]';
 }
 
 /* ---------- prompts nuevos ---------- */
@@ -1323,14 +1354,14 @@ function pcard(p) {
   return '<button class="pcard" data-act="open" data-id="' + p.id + '">' +
     '<div class="pc-top"><span class="pc-name">' + esc(p.name || "Video sin título") + "</span>" + (p.example ? '<span class="chip">Ejemplo</span>' : "") + "</div>" +
     '<div class="pc-meta">' + (a.wc ? a.wc + " palabras · ≈" + Math.max(1, Math.round(a.wc / 150)) + " min · " : "") + "editado " + rel(p.updatedAt) + "</div>" +
-    '<div class="pc-foot"><span class="stchip st-' + st + '">' + STAGE_L[st] + "</span>" + (p.publishDate ? '<span class="chip">' + fmtDate(p.publishDate) + "</span>" : "") +
+    '<div class="pc-foot"><span class="stchip st-' + st + '">' + STAGE_L[st] + "</span>" + (p.pillar ? '<span class="chip">' + esc(p.pillar) + "</span>" : "") + (p.publishDate ? '<span class="chip">' + fmtDate(p.publishDate) + "</span>" : "") +
     (a.level !== "none" ? '<span class="lvl lvl-' + a.level + '">' + LVL[a.level] + " · " + a.score + "</span>" : "") +
     '<span class="chip">' + steps.done + "/" + steps.total + "</span></div></button>";
 }
 
 function viewHome() {
-  const list = projects(); const st = settings();
-  const [w0, w1] = weekRange(); const goal = st.weeklyGoal || 2;
+  const list = projects(); const ch = chan();
+  const [w0, w1] = weekRange(); const goal = ch.weeklyGoal || 2;
   const done = list.filter(p => stageOf(p) === "publicado" && p.publishDate && p.publishDate >= w0 && p.publishDate <= w1).length;
   const next = list.filter(p => p.publishDate && p.publishDate >= todayISO() && stageOf(p) !== "publicado").sort((a, b) => a.publishDate < b.publishDate ? -1 : 1)[0];
   const hv = S.homeView || "tablero";
@@ -1339,6 +1370,7 @@ function viewHome() {
   return '<header class="top"><div class="brand">' + LOGO + "Vid<b>Creator</b></div>" + '<span class="sync" id="sync">' + syncLabel() + '</span><button class="icon" data-act="settings" aria-label="Ajustes">' + ic("gear") + "</button></header>" +
     (S.installEvt ? '<div class="install"><p>Instala VidCreator en tu teléfono para abrirla como una app.</p><button class="btn sm primary" data-act="install">Instalar</button></div>' : "") +
     '<section class="stack">' +
+    '<div class="lbl-row"><button class="chanbtn" data-act="chanOpen">' + esc(ch.name) + ' <span class="muted">▾</span></button><span class="mono muted">' + (channels().length > 1 ? channels().length + " canales" : "") + "</span></div>" +
     '<div class="card"><div class="lbl-row"><span>Meta de la semana</span><span class="mono">' + done + " / " + goal + " publicados</span></div>" +
     '<div class="meter"><i style="width:' + Math.min(100, done / goal * 100) + '%;background:var(--accent)"></i></div>' +
     '<p class="hint">' + (next ? "Próximo: <b>" + esc(next.name) + "</b> · " + fmtDate(next.publishDate) + " · " + STAGE_L[stageOf(next)] : "Ponle fecha a tus videos en el calendario para planificar la semana.") + "</p></div>" +
@@ -1346,7 +1378,7 @@ function viewHome() {
 }
 
 function homeBoard(list) {
-  const f = S.stageFilter || "todos"; const st = settings();
+  const f = S.stageFilter || "todos"; const st = chan();
   const counts = {}; list.forEach(p => { const s = stageOf(p); counts[s] = (counts[s] || 0) + 1; });
   const chips = [["todos", "Todos", list.length]].concat(STAGES.map(([k, l]) => [k, l, counts[k] || 0]))
     .map(([k, l, n]) => '<button class="chipbtn' + (f === k ? " on" : "") + '" data-act="stageFilter" data-v="' + k + '">' + l + ' <span class="mono">' + n + "</span></button>").join("");
@@ -1354,7 +1386,7 @@ function homeBoard(list) {
   const sug = S.ideaSug || [];
   return '<div class="card"><h3>Banco de ideas</h3>' +
     '<div class="row"><input type="text" id="f-idea" placeholder="Anota una idea de video" enterkeyhint="done"><button class="btn primary" data-act="addIdea">Agregar</button></div>' +
-    '<label class="field"><span>Tema de tu canal</span><input type="text" id="f-niche" data-setting="niche" value="' + esc(st.niche || "") + '" placeholder="Ej: finanzas personales y ahorro"></label>' +
+    '<label class="field"><span>Tema de tu canal</span><input type="text" id="f-niche" data-chan="niche" value="' + esc(st.niche || "") + '" placeholder="Ej: finanzas personales y ahorro"></label>' +
     '<button class="btn" data-act="suggestIdeas"' + (S.busy.ideasCanal ? " disabled" : "") + ">" + ic("wand") + "Sugerir ideas con IA</button>" + busyUI("ideasCanal") +
     (sug.length ? '<div class="stack" style="gap:8px">' + sug.map((x, i) => '<div class="idea" style="grid-template-columns:minmax(0,1fr) auto;align-items:center"><span style="color:var(--fg)"><b style="font-family:var(--f-body);text-transform:none;font-size:15px">' + esc(x.titulo) + "</b><br>" + esc(x.angulo) + " · " + esc((FORMATS[x.formato] || {}).name || "Libre") + '</span><button class="btn sm" data-act="addSug" data-i="' + i + '">' + (x.added ? ic("check") + "Agregada" : "Agregar") + "</button></div>").join("") + "</div>" : "") +
     "</div>" +
@@ -1377,7 +1409,8 @@ function homeCal(list) {
   }
   const dayVids = list.filter(p => p.publishDate === sel);
   const free = list.filter(p => !p.publishDate && stageOf(p) !== "publicado");
-  return '<div class="card"><div class="cal-nav"><button class="icon" data-act="calNav" data-d="-1" aria-label="Mes anterior">' + ic("back") + "</button><h3>" + MES[m - 1] + " " + y + '</h3><button class="icon" data-act="calNav" data-d="1" aria-label="Mes siguiente" style="transform:scaleX(-1)">' + ic("back") + "</button></div>" +
+  return '<button class="btn" data-act="planOpen">' + ic("frame") + "Armar plan de 30 días con pilares</button>" +
+    '<div class="card"><div class="cal-nav"><button class="icon" data-act="calNav" data-d="-1" aria-label="Mes anterior">' + ic("back") + "</button><h3>" + MES[m - 1] + " " + y + '</h3><button class="icon" data-act="calNav" data-d="1" aria-label="Mes siguiente" style="transform:scaleX(-1)">' + ic("back") + "</button></div>" +
     '<div class="cal">' + cells + "</div>" +
     '<div class="legend-row">' + STAGES.map(([k, l]) => '<span class="st-' + k + '"><i style="background:var(--sc);border-radius:50%"></i>' + l + "</span>").join("") + "</div></div>" +
     '<div class="sec-h"><h2>' + fmtDate(sel) + "</h2><span class=\"mono muted\">" + dayVids.length + "</span></div>" +
@@ -1386,7 +1419,7 @@ function homeCal(list) {
 }
 
 function homeCanal(list) {
-  const st = settings(); const real = list.filter(p => !p.example);
+  const st = chan(); const real = list.filter(p => !p.example);
   const an = real.map(p => ({ p, a: analyze(p) })).filter(x => x.a.level !== "none");
   const avg = an.length ? Math.round(an.reduce((s, x) => s + x.a.score, 0) / an.length) : null;
   const red = an.filter(x => x.a.level === "bad");
@@ -1446,6 +1479,8 @@ function viewSettings() {
     '<div class="card"><h3>Instalar en el teléfono</h3>' +
     (S.installEvt ? '<button class="btn primary" data-act="install">Instalar VidCreator</button>' :
       '<p class="hint">' + (isIOS ? "En iPhone: abre esta página en Safari, toca Compartir y luego “Agregar a inicio”." : "En Android: en el menú ⋮ de Chrome toca “Instalar app” o “Agregar a pantalla principal”.") + "</p>") + "</div>" +
+    '<div class="card"><h3>Apariencia</h3><div class="seg" style="width:100%">' + [["system", "Automático"], ["light", "Claro"], ["dark", "Oscuro"]].map(([k, l]) => '<button style="flex:1" data-act="theme" data-v="' + k + '" class="' + ((lsGet("vc_theme") || "system") === k ? "on" : "") + '">' + l + "</button>").join("") + "</div>" +
+    '<button class="btn ghost" data-act="obOpen">Ver la bienvenida otra vez</button></div>' +
     '<p class="hint" style="text-align:center">VidCreator ' + APP_VERSION + "</p>" +
     '<div class="card"><h3>Respaldo</h3><p class="hint">Tus videos se guardan solo en este teléfono. Descarga un respaldo de los textos (guiones, títulos, descripciones) de vez en cuando. Las fotos, videos y audios no van en el respaldo.</p>' +
     '<div class="actions"><button class="btn" data-act="backup">' + ic("dl") + 'Descargar respaldo</button><button class="btn" data-act="restore">' + ic("up") + "Restaurar</button></div></div>" +
@@ -1631,6 +1666,10 @@ function tabMini(p) {
     (rv ? '<div class="card"><h3>Revisión de la miniatura</h3><div class="scores">' +
       [["legibilidad", "Legibilidad"], ["impacto", "Impacto"], ["coherencia", "Con el título"]].map(([k, l]) => '<div class="score"><b>' + esc(rv[k] ?? "–") + "</b><span>" + l + "</span></div>").join("") + "</div>" +
       (rv.resumen ? "<p>" + esc(rv.resumen) + "</p>" : "") + (rv.consejos && rv.consejos.length ? "<ul>" + rv.consejos.map(c => "<li>" + esc(c) + "</li>").join("") + "</ul>" : "") + "</div>" : "") +
+    (S.variants === p.id ? '<div class="card"><h3>Variantes para “Probar y comparar”</h3>' + ["A", "B", "C"].map((l, i) => '<div class="field"><span>Variante ' + l + '</span><div class="thumb-wrap"><canvas id="vcv' + i + '" width="1280" height="720"></canvas></div></div>').join("") +
+      '<button class="btn primary" data-act="variantsDl">' + ic("dl") + "Descargar las 3</button>" +
+      '<p class="hint">En YouTube Studio, al editar el video, entra a la miniatura y elige “Probar y comparar”. YouTube muestra cada variante a parte del público y se queda con la que logra más tiempo de visualización.</p></div>'
+      : '<button class="btn" data-act="variants">' + ic("image") + "Crear 3 variantes para probar cuál funciona</button>") +
     '<p class="hint">Funciona mejor con tu cara o una escena real, máximo 4 palabras y mucho contraste. Mírala en tamaño chico antes de subirla.</p>' +
     "</section>";
 }
@@ -1658,8 +1697,16 @@ function drawLines(c, fit, x, y, align, fill, stroke) {
   return fit.lines.length * lh;
 }
 function drawThumb() {
-  const cv = $("#thumbCv"); const p = cur(); if (!cv || !p) return;
-  const c = cv.getContext("2d"), W = 1280, H = 720, t = p.thumb || {};
+  const p = cur(); if (!p) return;
+  const cv = $("#thumbCv"); if (cv) drawThumbOn(cv, p.thumb || {});
+  if (S.variants === p.id) variantThumbs(p.thumb || {}).forEach((t, i) => { const v = $("#vcv" + i); if (v) drawThumbOn(v, t); });
+}
+function variantThumbs(t) {
+  const L = ["izq", "centro", "franja"], i0 = Math.max(0, L.indexOf(t.layout || "izq")), c0 = Math.max(0, COLORS.indexOf(t.color));
+  return [0, 1, 2].map(k => Object.assign({}, t, { layout: L[(i0 + k) % 3], color: k === 0 ? (t.color || COLORS[0]) : COLORS[(c0 + k) % COLORS.length] }));
+}
+function drawThumbOn(cv, t) {
+  const c = cv.getContext("2d"), W = 1280, H = 720;
   c.save(); c.clearRect(0, 0, W, H);
   const bg = t.bgId && getImg(t.bgId);
   if (bg) {
@@ -1920,7 +1967,7 @@ function exportCard(p) {
 /* ---------- hojas (paneles inferiores) ---------- */
 function renderSheet() {
   const el = $("#sheet"); const s = S.sheet; const p = cur();
-  if (!s || !p) { el.hidden = true; el.innerHTML = ""; el.dataset.type = ""; return; }
+  if (!s || (!p && !["channels", "onboard", "plan", "hooks", "ai"].includes(s.type))) { el.hidden = true; el.innerHTML = ""; el.dataset.type = ""; return; }
   const close = '<button class="icon" data-act="closeSheet" aria-label="Cerrar">' + ic("x") + "</button>";
   let inner = "";
   if (s.type === "ai") {
@@ -1932,6 +1979,39 @@ function renderSheet() {
       '<details><summary class="hint">Ver la instrucción</summary><textarea readonly rows="6" style="margin-top:8px;font-size:13px">' + esc(m.prompt) + "</textarea></details>" +
       '<label class="field"><span>Respuesta de Claude</span><textarea id="aiPaste" rows="7" placeholder="Pega aquí la respuesta completa">' + esc(m.text) + "</textarea></label>" +
       '<button class="btn primary" data-act="aiApply">' + ic("check") + "Aplicar respuesta</button>";
+  } else if (s.type === "channels") {
+    const cs = channels(), c0 = chan();
+    inner = '<div class="panel-h"><h3>Tus canales</h3>' + close + "</div>" +
+      '<div class="vlist">' + cs.map(c => '<button class="vopt' + (c.id === c0.id ? " on" : "") + '" data-act="chanPick" data-id="' + esc(c.id) + '"><span class="dot ' + (c.id === c0.id ? "ok" : "none") + '"></span><span class="vn"><b>' + esc(c.name) + "</b><span>" + chanCount(c) + " videos" + (c.niche ? " · " + esc(c.niche) : "") + "</span></span></button>").join("") + "</div>" +
+      '<label class="field"><span>Nombre del canal activo</span><input type="text" id="f-chname" data-chan="name" value="' + esc(c0.name) + '"></label>' +
+      '<div class="row"><input type="text" id="f-newchan" placeholder="Nombre del nuevo canal" enterkeyhint="done"><button class="btn" data-act="chanAdd">Agregar</button></div>' +
+      (cs.length > 1 && !chanCount(c0) ? '<button class="btn danger" data-act="chanDel">Eliminar este canal (está vacío)</button>' : "") +
+      '<p class="hint">Cada canal tiene sus propios videos, ideas, meta semanal, ganchos y plan. La voz clonada y los ajustes son los mismos para todos.</p>';
+  } else if (s.type === "onboard") {
+    const step = s.step || 0, c0 = chan();
+    const steps = [
+      ["Bienvenido a VidCreator", "Prepara tus videos de YouTube de principio a fin: idea, guión, voz, tomas, miniatura, título, Shorts y publicación. Todo queda guardado en tu teléfono."],
+      ["Tu voz, no una plantilla", "YouTube no monetiza contenido genérico o hecho en serie. Cada video trae un semáforo de originalidad que te avisa antes de subirlo y te dice qué cambiar para que suene a ti."],
+      ["Partamos", "Cuéntale a la app de qué trata tu canal y cuántos videos quieres publicar por semana."]
+    ];
+    inner = '<div class="ob">' + (step === 0 ? LOGO.replace('class="logo"', 'class="logo" style="width:64px;height:64px"') : "") +
+      '<div class="ob-dots">' + [0, 1, 2].map(i => '<i class="' + (i === step ? "on" : "") + '"></i>').join("") + "</div>" +
+      "<h3>" + steps[step][0] + "</h3><p>" + steps[step][1] + "</p></div>" +
+      (step === 2 ? '<label class="field"><span>Tema de tu canal</span><input type="text" id="f-obniche" data-chan="niche" value="' + esc(c0.niche || "") + '" placeholder="Ej: finanzas personales y ahorro"></label>' +
+        '<div class="field"><span>Videos por semana</span><div class="chips">' + [1, 2, 3, 5].map(n => '<button class="chipbtn' + ((c0.weeklyGoal || 2) === n ? " on" : "") + '" data-act="goal" data-v="' + n + '">' + n + "</button>").join("") + "</div></div>" : "") +
+      '<div class="actions">' + (step < 2 ? '<button class="btn ghost" data-act="obDone">Saltar</button><button class="btn primary" data-act="obNext">Siguiente</button>' : '<button class="btn primary big" data-act="obDone">Empezar</button>') + "</div>";
+  } else if (s.type === "plan") {
+    const c0 = chan(); const pl = S.plan || (S.plan = { start: todayISO(), items: null });
+    const goal = c0.weeklyGoal || 2;
+    inner = '<div class="panel-h"><h3>Plan de 30 días</h3>' + close + "</div>" +
+      '<p class="hint">Los pilares son los 2 a 4 temas fijos de tu canal. El plan reparte videos entre ellos para que formen series y la gente quiera ver el siguiente.</p>' +
+      '<label class="field"><span>Tema del canal</span><input type="text" id="f-pniche" data-chan="niche" value="' + esc(c0.niche || "") + '" placeholder="Ej: finanzas personales y ahorro"></label>' +
+      '<label class="field"><span>Pilares (uno por línea)</span><textarea id="f-pillars" data-chan="pillars" rows="4" placeholder="Ej:\nAhorro en el día a día\nErrores con plata que cometí\nInvertir desde cero">' + esc(c0.pillars || "") + "</textarea></label>" +
+      '<div class="field"><span>Videos por semana</span><div class="chips">' + [1, 2, 3, 5].map(n => '<button class="chipbtn' + (goal === n ? " on" : "") + '" data-act="goal" data-v="' + n + '">' + n + "</button>").join("") + "</div></div>" +
+      '<label class="field"><span>Desde</span><input type="date" id="f-pstart" data-plan="start" value="' + esc(pl.start) + '"></label>' +
+      '<button class="btn primary" data-act="planGen"' + (S.busy.plan ? " disabled" : "") + ">" + ic("wand") + "Armar el plan (" + planCount(goal) + " videos)</button>" + busyUI("plan") + aiNote() +
+      (pl.items ? '<div class="card"><h3>Propuesta</h3>' + pl.items.map(it => '<div class="kv" style="align-items:flex-start"><span class="mono" style="flex:none;width:56px">' + fmtDate(it.date) + '</span><span style="flex:1;min-width:0"><b>' + esc(it.titulo) + '</b><br><span class="hint">' + esc(it.pilar) + " · " + esc((FORMATS[it.formato] || {}).name || "Libre") + "</span></span></div>").join("") +
+        '<button class="btn primary" data-act="planAdd">' + ic("check") + "Agregar los " + pl.items.length + " al calendario</button></div>" : "");
   } else if (s.type === "tpl") {
     const fmt = !s.pick && p.format && FORMATS[p.format] ? p.format : null;
     if (!fmt) {
@@ -1947,7 +2027,7 @@ function renderSheet() {
         '<p class="hint">' + ((p.script || "").trim() ? "Reemplaza el guión actual. Puedes volver atrás con “Deshacer corrección”. " : "") + "Después usa “Corregir y estructurar” para pulirlo.</p>";
     }
   } else if (s.type === "hooks") {
-    const hs = settings().hooks || [];
+    const hs = chan().hooks || [];
     inner = '<div class="panel-h"><h3>Ganchos guardados</h3>' + close + "</div>" +
       (hs.length ? hs.map(h => '<div class="flag"><span><span class="kchip ' + (h.kind === "gancho" ? "k-grabacion" : "k-editada") + '">' + (h.kind === "gancho" ? "Gancho" : "Cierre") + "</span> " + esc(h.text) + '</span><span class="hint">De: ' + esc(h.from) + '</span><div class="actions"><button class="btn sm" data-act="hookCopy" data-id="' + h.id + '">' + ic("copy") + 'Copiar</button><button class="btn sm ghost danger" data-act="hookDel" data-id="' + h.id + '">Quitar</button></div></div>').join("")
         : '<p class="hint">Aún no guardas ganchos. Cuando un guión te quede bien, toca “Guardar gancho y cierre en mi biblioteca”.</p>') +
@@ -2127,7 +2207,7 @@ async function act(name, el) {
     case "restore": $("#fileBackup").click(); break;
     case "tab": Player.stop(); stopPreview(); S.tab = d.t; render(); window.scrollTo(0, 0); break;
     case "menu": S.sheet = { type: "menu" }; renderSheet(); break;
-    case "closeSheet": Player.stop(); stopPreview(); if (S.rec && !S.rec.mr) S.rec = null; if (S.manual) { endManual(null); break; } S.sheet = null; S.ed = null; S.au = null; renderSheet(); render(); break;
+    case "closeSheet": if (S.sheet && S.sheet.type === "onboard") { settings().onboarded = true; save("settings"); } if (S.sheet && ["channels", "plan"].includes(S.sheet.type)) render(); Player.stop(); stopPreview(); if (S.rec && !S.rec.mr) S.rec = null; if (S.manual) { endManual(null); break; } S.sheet = null; S.ed = null; S.au = null; renderSheet(); render(); break;
     /* tablero, calendario y canal */
     case "homeView": S.homeView = d.v; render(); break;
     case "stageFilter": S.stageFilter = d.v; render(); break;
@@ -2138,7 +2218,7 @@ async function act(name, el) {
       render(); toast("Idea guardada"); break;
     }
     case "suggestIdeas": {
-      const st = settings(); const niche = (st.niche || "").trim();
+      const st = chan(); const niche = (st.niche || "").trim();
       if (!niche) { toast("Escribe primero el tema de tu canal."); const n = $("#f-niche"); if (n) n.focus(); break; }
       const existing = projects().filter(x => !x.example).map(x => x.name).slice(0, 30).join("; ");
       const r = await askJSON("ideasCanal", "Pensando ideas para tu canal", promptIdeasCanal(niche, existing));
@@ -2153,9 +2233,67 @@ async function act(name, el) {
     case "calNav": { const [y, m] = (S.calMonth || todayISO().slice(0, 7)).split("-").map(Number); const dt = new Date(y, m - 1 + Number(d.d), 1); S.calMonth = isoOf(dt).slice(0, 7); render(); break; }
     case "calDay": S.calDay = d.v; render(); break;
     case "schedule": { const q = S.docs[d.id]; if (q) { q.publishDate = d.day; touch(q); save(d.id); render(); toast("Programado para el " + fmtDate(d.day)); } break; }
-    case "goal": settings().weeklyGoal = +d.v; save("settings"); render(); break;
-    case "hookCopy": { const h = (settings().hooks || []).find(x => x.id === d.id); if (h) copyText(h.text); break; }
-    case "hookDel": { const st = settings(); st.hooks = (st.hooks || []).filter(x => x.id !== d.id); save("settings"); if (S.sheet) renderSheet(); render(); break; }
+    case "goal": chan().weeklyGoal = +d.v; save("settings"); if (S.sheet) renderSheet(); render(); break;
+    case "hookCopy": { const h = (chan().hooks || []).find(x => x.id === d.id); if (h) copyText(h.text); break; }
+    case "hookDel": { const st = chan(); st.hooks = (st.hooks || []).filter(x => x.id !== d.id); save("settings"); if (S.sheet) renderSheet(); render(); break; }
+
+    /* canales */
+    case "chanOpen": S.sheet = { type: "channels" }; renderSheet(); break;
+    case "chanPick": S.channelId = d.id; lsSet("vc_channel", d.id); S.sheet = null; S.stageFilter = "todos"; S.ideaSug = null; S.plan = null; renderSheet(); render(); break;
+    case "chanAdd": {
+      const inp = $("#f-newchan"); const v = (inp && inp.value || "").trim(); if (!v) { toast("Escribe el nombre del canal."); break; }
+      const c = { id: "c" + uid(), name: v.slice(0, 50), niche: "", weeklyGoal: 2, hooks: [], pillars: "" };
+      channels().push(c); save("settings"); S.channelId = c.id; lsSet("vc_channel", c.id); S.stageFilter = "todos"; S.ideaSug = null;
+      S.sheet = null; renderSheet(); render(); toast("Canal “" + c.name + "” creado"); break;
+    }
+    case "chanDel": {
+      const cs = channels(), c0 = chan(); if (cs.length < 2 || chanCount(c0)) break;
+      settings().channels = cs.filter(c => c.id !== c0.id); S.channelId = settings().channels[0].id; lsSet("vc_channel", S.channelId);
+      save("settings"); S.sheet = null; renderSheet(); render(); break;
+    }
+    /* bienvenida */
+    case "obNext": S.sheet = { type: "onboard", step: (S.sheet.step || 0) + 1 }; renderSheet(); break;
+    case "obDone": settings().onboarded = true; save("settings"); S.sheet = null; renderSheet(); render(); break;
+    case "obOpen": S.sheet = { type: "onboard", step: 0 }; renderSheet(); break;
+    /* tema */
+    case "theme": lsSet("vc_theme", d.v); applyTheme(d.v); render(); break;
+    /* plan */
+    case "planOpen": S.plan = S.plan || { start: todayISO(), items: null }; S.sheet = { type: "plan" }; renderSheet(); break;
+    case "planGen": {
+      const c0 = chan(); const niche = (c0.niche || "").trim();
+      const pillars = String(c0.pillars || "").split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 5);
+      if (!niche) { toast("Escribe el tema del canal."); break; }
+      if (pillars.length < 2) { toast("Escribe al menos 2 pilares, uno por línea."); break; }
+      const goal = c0.weeklyGoal || 2, n = planCount(goal);
+      const existing = projects().filter(x => !x.example).map(x => x.name).slice(0, 30).join("; ");
+      const r = await askJSON("plan", "Armando tu plan", promptPlan(niche, pillars, n, existing));
+      if (Array.isArray(r)) {
+        const dates = planDates(S.plan.start, goal, n);
+        S.plan.items = r.filter(x => x && x.titulo).slice(0, n).map((x, i) => ({ titulo: String(x.titulo).slice(0, 90), pilar: String(x.pilar || pillars[i % pillars.length]).slice(0, 60), formato: FORMATS[x.formato] ? x.formato : "", angulo: String(x.angulo || ""), date: dates[i] || dates[dates.length - 1] }));
+        S.sheet = { type: "plan" }; renderSheet();
+      }
+      break;
+    }
+    case "planAdd": {
+      const items = (S.plan && S.plan.items) || []; if (!items.length) break;
+      items.forEach(it => { const id = uid(); S.docs[id] = newProject({ name: it.titulo, topic: it.angulo, format: it.formato || undefined, pillar: it.pilar, stage: "idea", publishDate: it.date }); save(id, 50); });
+      S.plan = null; S.sheet = null; renderSheet(); S.homeView = "calendario"; S.calMonth = items[0].date.slice(0, 7); S.calDay = items[0].date; render();
+      toast(items.length + " videos agendados"); break;
+    }
+    /* variantes de miniatura */
+    case "variants": S.variants = p.id; render(); break;
+    case "variantsDl": {
+      const files = [];
+      for (const [i, t] of variantThumbs(p.thumb || {}).entries()) {
+        const cv = document.createElement("canvas"); cv.width = 1280; cv.height = 720; drawThumbOn(cv, t);
+        const b = await toBlob(cv, "image/png"); if (b) files.push(new File([b], slug(p.title || p.name) + "-miniatura-" + "abc"[i] + ".png", { type: "image/png" }));
+      }
+      if (!files.length) break;
+      let shared = false;
+      try { if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title: "Miniaturas" }); shared = true; } } catch (e) { if (e && e.name === "AbortError") shared = true; }
+      if (!shared) for (const f of files) { saveFile(f.name, f); await new Promise(r => setTimeout(r, 500)); }
+      p.thumbDone = true; touch(p); save(p.id); break;
+    }
 
     /* guión guiado y ganchos */
     case "tplOpen": S.sheet = { type: "tpl" }; renderSheet(); break;
@@ -2171,7 +2309,7 @@ async function act(name, el) {
     }
     case "hooksOpen": S.sheet = { type: "hooks" }; renderSheet(); break;
     case "saveHooks": {
-      const st = settings(); st.hooks = st.hooks || [];
+      const st = chan(); st.hooks = st.hooks || [];
       const g = sectionText(p.script, "GANCHO") || ((cleanSpeech(p.script).match(/[^.!?]+[.!?]*/) || [""])[0]).trim();
       const c = sectionText(p.script, "CIERRE");
       let n = 0;
@@ -2447,7 +2585,8 @@ let bannerT;
 const onInput = e => {
   const el = e.target;
   if (el.dataset.tq) { const q = cur(); if (q) { q.answers = q.answers || {}; q.answers[el.dataset.tq] = el.value; touch(q); save(q.id, 800); } return; }
-  if (el.dataset.setting) { settings()[el.dataset.setting] = el.value; save("settings", 800); return; }
+  if (el.dataset.chan) { chan()[el.dataset.chan] = el.value; save("settings", 800); return; }
+  if (el.dataset.plan && S.plan) { S.plan[el.dataset.plan] = el.value; return; }
   if (el.dataset.shot) { const q = cur(); const s = q && (q.shots || []).find(x => x.id === el.dataset.shot); if (s) { s.done = el.checked; const lb = el.closest(".shot"); if (lb) lb.classList.toggle("done", s.done); touch(q); save(q.id); } return; }
   if (el.id === "aiPaste" && S.manual) { S.manual.text = el.value; return; }
   if (el.dataset.ex === "musicVol") { const q = cur(); if (q) { q.musicVol = +el.value; save(q.id); } const v = $("#ex-mvv"); if (v) v.textContent = el.value + "%"; return; }
@@ -2493,7 +2632,7 @@ document.addEventListener("input", onInput);
 document.addEventListener("change", e => { if (e.target.type === "date") onInput(e); });
 document.addEventListener("keydown", e => {
   if (e.key !== "Enter" || !e.target.id) return;
-  const map = { "f-idea": "addIdea", "f-shot": "addShot" };
+  const map = { "f-idea": "addIdea", "f-shot": "addShot", "f-newchan": "chanAdd" };
   if (map[e.target.id]) { e.preventDefault(); act(map[e.target.id], e.target); }
 });
 
@@ -2530,6 +2669,15 @@ window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.inst
 window.addEventListener("resize", () => drawWave());
 window.addEventListener("online", () => { loadStatus().then(() => { if (!isTyping()) render(); }); });
 
+/* ---------- tema claro u oscuro ---------- */
+function applyTheme(v) {
+  const r = document.documentElement;
+  if (v === "light" || v === "dark") r.dataset.theme = v; else delete r.dataset.theme;
+  const dark = v === "dark" || (v !== "light" && !(window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches));
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", dark ? "#09111e" : "#f2f5fa");
+}
+applyTheme(lsGet("vc_theme") || "system");
+
 /* ---------- aviso de versión nueva ---------- */
 async function checkVersion() {
   try {
@@ -2551,7 +2699,9 @@ $("#updBtn").addEventListener("click", async () => {
   S.docs = docs || {};
   S.loaded = true;
   if (!Object.keys(S.docs).length) seed();
+  if (!channels().some(c => c.id === S.channelId)) S.channelId = channels()[0].id;
   render();
+  if (!settings().onboarded) { S.sheet = { type: "onboard", step: 0 }; renderSheet(); }
   loadStatus().then(() => { if (!isTyping() && !S.sheet) render(); });
   if (document.fonts && document.fonts.load) document.fonts.load("100px Anton").then(() => drawThumb()).catch(() => {});
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(() => {});

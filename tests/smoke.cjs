@@ -34,12 +34,32 @@ const check = (label, cond) => results.push([label, !!cond]);
 
 (async () => {
   await wait(300);
+  check("bienvenida en el primer uso", shown("Bienvenido a VidCreator"));
+  click('[data-act="obNext"]'); await wait(20); click('[data-act="obNext"]'); await wait(20);
+  type("#f-obniche", "finanzas personales y ahorro"); click('[data-act="obDone"]'); await wait(30);
+  check("bienvenida se cierra", !shown("Bienvenido a VidCreator"));
   check("inicio: meta semanal", shown("Meta de la semana"));
   type("#f-idea", "Cómo pagué mi deuda en 8 meses"); click('[data-act="addIdea"]'); await wait(40);
   check("banco de ideas", shown("Cómo pagué mi deuda"));
   click('[data-act="homeView"][data-v="calendario"]'); await wait(30); check("calendario", shown("Sin fecha"));
   click('[data-act="homeView"][data-v="canal"]'); await wait(30); check("mi canal", shown("Salud del canal"));
+  // plan de 30 días en modo gratis
+  click('[data-act="homeView"][data-v="calendario"]'); await wait(30);
+  click('[data-act="planOpen"]'); await wait(20);
+  type("#f-pillars", "Ahorro diario\nErrores con plata\nInvertir desde cero");
+  click('[data-act="planGen"]'); await wait(40);
+  const planJson = JSON.stringify(Array.from({ length: 9 }, (_, i) => ({ titulo: "Video plan " + (i + 1), pilar: ["Ahorro diario", "Errores con plata", "Invertir desde cero"][i % 3], formato: "historia", angulo: "ángulo " + i })));
+  type("#aiPaste", planJson); click('[data-act="aiApply"]'); await wait(40);
+  check("plan: propuesta con fechas", shown("Agregar los 9 al calendario"));
+  click('[data-act="planAdd"]'); await wait(40);
+  check("plan: agendado en el calendario", shown("Video plan 1"));
+  // varios canales
+  click('[data-act="chanOpen"]'); await wait(20);
+  type("#f-newchan", "Canal de prueba"); click('[data-act="chanAdd"]'); await wait(30);
+  check("canal nuevo activo y vacío", shown("Canal de prueba") && !shown("Video plan 1"));
+  click('[data-act="chanOpen"]'); await wait(20); click('[data-act="chanPick"][data-id="main"]'); await wait(30);
   click('[data-act="homeView"][data-v="tablero"]'); await wait(30);
+  check("volver al canal principal", shown("Video plan 1"));
 
   [...doc.querySelectorAll('[data-act="open"]')].find(c => c.textContent.includes("Ejemplo")).dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
   await wait(40);
@@ -54,6 +74,9 @@ const check = (label, cond) => results.push([label, !!cond]);
 
   for (const t of ["voz", "media", "mini", "titulos", "shorts", "orig", "publicar"]) { click('[data-act="tab"][data-t="' + t + '"]'); await wait(25); check("pestaña " + t, doc.querySelector(".tab.on") && doc.querySelector(".tab.on").dataset.t === t); }
   check("publicar: puntaje SEO", shown("Puntaje SEO"));
+  click('[data-act="tab"][data-t="mini"]'); await wait(20); click('[data-act="variants"]'); await wait(30);
+  check("miniatura: 3 variantes", doc.querySelector("#vcv0") && doc.querySelector("#vcv2"));
+  click('[data-act="tab"][data-t="publicar"]'); await wait(20);
   check("publicar: capítulos", shown("Capítulos"));
   click('[data-act="tab"][data-t="titulos"]'); await wait(20);
   type("#f-title", "Cómo ordenar tus gastos en 20 minutos");
