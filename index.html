@@ -462,7 +462,24 @@ async function runBusy(key, label, fn) {
   catch (e) { if (!(e && e.name === "AbortError")) toast(apiErr(e)); return null; }
   finally { clearInterval(tick); delete S.busy[key]; render(); }
 }
+/* Modo gratis: sin clave de IA en Vercel, el botón entrega la instrucción para usarla
+   en la app de Claude y la respuesta pegada de vuelta se aplica igual que la del servidor. */
+const aiManual = () => !(S.status && S.status.ai);
+function askManual(prompt, opts) {
+  if (S.manual) { S.manual.resolve(null); }
+  return new Promise(resolve => {
+    S.manual = { prompt: prompt + "\n\nResponde únicamente con el JSON dentro de un bloque de código, sin explicaciones.", resolve, images: (opts && opts.images) || null, text: "" };
+    S.sheet = { type: "ai" }; renderSheet();
+  });
+}
+function endManual(value) {
+  const m = S.manual; S.manual = null;
+  if (S.sheet && S.sheet.type === "ai") S.sheet = null;
+  renderSheet();
+  if (m) m.resolve(value);
+}
 function askJSON(key, label, prompt, opts) {
+  if (aiManual()) return askManual(prompt, opts);
   return runBusy(key, label, async signal => {
     const body = { prompt: prompt + "\n\nResponde únicamente con el JSON, sin texto antes ni después." };
     if (opts && opts.images) body.images = await Promise.all(opts.images.map(async b => ({ data: await blobToB64(b), media_type: b.type || "image/jpeg" })));
@@ -478,9 +495,14 @@ function busyUI(key) {
 function aiNote(kind) {
   const st = S.status;
   if (st === undefined) return "";
-  if (st === null) return '<p class="hint">Sin conexión con el servidor: las funciones con IA necesitan internet.</p>';
-  if (st.auth === false) return '<p class="hint">Ingresa tu código de acceso en <button class="btn sm ghost" data-act="settings">Ajustes</button> para usar la IA.</p>';
-  if (kind === "voice" ? !st.voice : !st.ai) return '<p class="hint">' + (kind === "voice" ? "Falta ELEVENLABS_API_KEY" : "Falta ANTHROPIC_API_KEY") + " en Vercel. Revisa la guía de instalación.</p>";
+  if (kind === "voice") {
+    if (st === null) return '<p class="hint">Sin conexión con el servidor: las voces IA necesitan internet.</p>';
+    if (st.auth === false) return '<p class="hint">Ingresa tu código de acceso en <button class="btn sm ghost" data-act="settings">Ajustes</button> para usar las voces IA.</p>';
+    if (!st.voice) return '<p class="hint">Las voces IA necesitan una clave de ElevenLabs (ELEVENLABS_API_KEY en Vercel). Grabar y editar tu propia voz funciona gratis sin ella.</p>';
+    return "";
+  }
+  if (st && st.auth === false) return '<p class="hint">Tu código de acceso no coincide. Revísalo en <button class="btn sm ghost" data-act="settings">Ajustes</button>, o usa el modo gratis con la app de Claude.</p>';
+  if (aiManual()) return '<p class="hint">Modo gratis: el botón te da una instrucción para pegar en la app de Claude, y luego pegas su respuesta aquí.</p>';
   return "";
 }
 
@@ -1052,7 +1074,8 @@ function viewSettings() {
     '<label class="field"><span>Código de acceso</span><input type="password" id="f-code" value="' + esc(getCode()) + '" placeholder="El mismo APP_CODE que pusiste en Vercel" autocomplete="off"></label>' +
     '<button class="btn primary" data-act="saveCode">Guardar y probar</button>' +
     "<div>" + (st === undefined ? row("Estado", "Revisando…") : st === null ? row("Servidor", "Sin conexión") : st.auth === false ? row("Código", "Incorrecto") :
-      row("IA para textos", st.ai ? "Lista" : "Falta clave") + row("Voces IA (ElevenLabs)", st.voice ? "Lista" : "Falta clave") + row("Modelo", esc(st.model || ""))) + "</div></div>" +
+      row("IA para textos", st.ai ? "Lista" : "Modo gratis (con la app de Claude)") + row("Voces IA (ElevenLabs)", st.voice ? "Lista" : "Sin clave") + (st.ai ? row("Modelo", esc(st.model || "")) : "")) + "</div>" +
+    '<p class="hint">Sin claves, la app funciona igual: grabar y editar tu voz, fotos, miniatura y alerta básica son gratis. Para la IA de textos, cada botón te da una instrucción para usar en la app de Claude.</p></div>' +
     '<div class="card"><h3>Tu voz IA</h3>' + (s.clone ? row("Voz clonada", "Creada") + '<button class="btn ghost" data-act="forgetClone">Dejar de usarla en la app</button><p class="hint">Para borrarla del todo, elimínala también en tu cuenta de ElevenLabs.</p>' : '<p class="hint">Aún no creas una copia IA de tu voz. Se hace desde la pestaña Voz de cualquier video.</p>') + "</div>" +
     '<div class="card"><h3>Instalar en el teléfono</h3>' +
     (S.installEvt ? '<button class="btn primary" data-act="install">Instalar VidCreator</button>' :
@@ -1338,7 +1361,16 @@ function renderSheet() {
   if (!s || !p) { el.hidden = true; el.innerHTML = ""; el.dataset.type = ""; return; }
   const close = '<button class="icon" data-act="closeSheet" aria-label="Cerrar">' + ic("x") + "</button>";
   let inner = "";
-  if (s.type === "menu") {
+  if (s.type === "ai") {
+    const m = S.manual; if (!m) { S.sheet = null; el.hidden = true; return; }
+    inner = '<div class="panel-h"><h3>Usar con Claude</h3>' + close + "</div>" +
+      '<ol class="hint" style="margin:0;padding-left:18px;display:grid;gap:4px"><li>Copia la instrucción.</li><li>Ábrela en un chat nuevo de la app de Claude y pégala.' + (m.images ? " Adjunta también la miniatura." : "") + "</li><li>Copia la respuesta completa de Claude y pégala abajo.</li></ol>" +
+      '<div class="actions"><button class="btn primary" data-act="aiCopy">' + ic("copy") + 'Copiar instrucción</button><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener">' + ic("ext") + "Abrir Claude</a></div>" +
+      (m.images ? '<button class="btn" data-act="aiImg">' + ic("share") + "Guardar miniatura para adjuntarla</button>" : "") +
+      '<details><summary class="hint">Ver la instrucción</summary><textarea readonly rows="6" style="margin-top:8px;font-size:13px">' + esc(m.prompt) + "</textarea></details>" +
+      '<label class="field"><span>Respuesta de Claude</span><textarea id="aiPaste" rows="7" placeholder="Pega aquí la respuesta completa">' + esc(m.text) + "</textarea></label>" +
+      '<button class="btn primary" data-act="aiApply">' + ic("check") + "Aplicar respuesta</button>";
+  } else if (s.type === "menu") {
     inner = '<div class="panel-h"><h3>' + esc(p.name) + "</h3>" + close + '</div><div class="menu-list"><button class="btn" data-act="dup">' + ic("copy") + 'Duplicar video</button><button class="btn danger" data-act="askDel">' + ic("x") + "Eliminar video</button></div>";
   } else if (s.type === "confirmDel") {
     inner = '<div class="panel-h"><h3>¿Eliminar “' + esc(p.name) + '”?</h3></div><p class="muted">Se borran el guión, los audios, las fotos guardadas y los textos. No se puede deshacer.</p>' +
@@ -1500,7 +1532,16 @@ async function act(name, el) {
     case "restore": $("#fileBackup").click(); break;
     case "tab": Player.stop(); S.tab = d.t; render(); window.scrollTo(0, 0); break;
     case "menu": S.sheet = { type: "menu" }; renderSheet(); break;
-    case "closeSheet": Player.stop(); if (S.rec && !S.rec.mr) S.rec = null; S.sheet = null; S.ed = null; S.au = null; renderSheet(); render(); break;
+    case "closeSheet": Player.stop(); if (S.rec && !S.rec.mr) S.rec = null; if (S.manual) { endManual(null); break; } S.sheet = null; S.ed = null; S.au = null; renderSheet(); render(); break;
+    case "aiCopy": if (S.manual) copyText(S.manual.prompt); break;
+    case "aiImg": if (S.manual && S.manual.images) shareFile(slug(p.title || p.name) + "-miniatura.jpg", S.manual.images[0]); break;
+    case "aiApply": {
+      const txt = (($("#aiPaste") || {}).value || "").trim();
+      if (!txt) { toast("Pega primero la respuesta de Claude."); break; }
+      try { endManual(parseJSON(txt)); }
+      catch (e) { toast("No encontré la respuesta en ese texto. Copia la respuesta completa de Claude, incluido el bloque de código."); }
+      break;
+    }
     case "dup": {
       const id = uid(); const copy = JSON.parse(JSON.stringify(p)); delete copy.id;
       Object.assign(copy, { name: p.name + " (copia)", example: false, media: [], takes: [], thumb: Object.assign({}, p.thumb, { bgId: "" }), createdAt: Date.now(), updatedAt: Date.now() });
@@ -1666,6 +1707,7 @@ document.addEventListener("click", e => {
 let bannerT;
 document.addEventListener("input", e => {
   const el = e.target;
+  if (el.id === "aiPaste" && S.manual) { S.manual.text = el.value; return; }
   if (el.id === "teleSpeed" && S.rec) { S.rec.speed = +el.value; const s = el.parentElement.querySelector(".mono"); if (s) s.textContent = el.value; return; }
   if (el.dataset.au && S.au) {
     const st = S.au, v = +el.value;

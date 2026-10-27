@@ -14,7 +14,11 @@ Se instala como app (PWA) desde el navegador. Tus videos, fotos y audios quedan 
 | `api/tts.js`, `api/voices.js`, `api/clone.js` | Conectan con ElevenLabs (voces IA y copia de tu voz) |
 | `api/status.js`, `lib/auth.js` | Revisan la conexión y protegen tus claves con un código |
 
-## 1. Consigue tus claves
+## Modo gratis
+
+La app funciona sin ninguna clave. Grabar y editar tu voz, fotos, miniatura, alerta de originalidad básica y checklist son gratis. Sin `ANTHROPIC_API_KEY`, cada botón de IA abre "Usar con Claude": copias la instrucción, la pegas en la app de Claude, y pegas la respuesta de vuelta en VidCreator. Las claves de abajo son opcionales, para que todo sea automático.
+
+## 1. Consigue tus claves (opcional)
 
 1. **Claude (obligatoria para la IA de textos):** crea una cuenta en https://console.anthropic.com, carga saldo y crea una API key.
 2. **ElevenLabs (solo si quieres voces IA):** crea una cuenta en https://elevenlabs.io y copia tu API key desde tu perfil. La copia de tu propia voz depende del plan que tengas.
