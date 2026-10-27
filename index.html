@@ -271,6 +271,7 @@ mark{background:color-mix(in srgb,var(--warn) 30%,transparent);color:var(--fg);b
 .danger{color:var(--bad)}
 
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:40;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;max-width:min(92vw,460px);text-align:center;box-shadow:0 8px 24px rgb(0 0 0/.3)}
+#upd{position:fixed;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top,0px));z-index:45;display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-radius:14px;background:var(--surface);border:1px solid var(--accent);box-shadow:0 8px 24px rgb(0 0 0/.35);font-size:14px;font-weight:600;width:max-content;max-width:calc(100vw - 32px)}
 .skel{height:76px;border-radius:var(--r);background:var(--surface);margin-bottom:10px}
 .kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
 .kv:first-child{border-top:0}
@@ -319,13 +320,16 @@ input[type=date]{width:100%;background:var(--surface);border:1px solid var(--lin
 <div id="app"><div class="top"><div class="brand">VidCreator</div></div><div class="skel"></div><div class="skel"></div></div>
 <div id="sheet" hidden></div>
 <div id="toast" hidden></div>
+<div id="upd" hidden><span>Hay una versión nueva de VidCreator.</span><button class="btn sm primary" id="updBtn">Actualizar</button></div>
 <input type="file" id="fileMedia" accept="image/*,video/*" multiple hidden>
 <input type="file" id="fileThumb" accept="image/*" hidden>
 <input type="file" id="fileAudio" accept="audio/*,video/*" hidden>
 <input type="file" id="fileBackup" accept="application/json,.json" hidden>
+<input type="file" id="fileMusic" accept="audio/*" hidden>
 
 <script>
 "use strict";
+const APP_VERSION = "1.4.0";
 /* =========================================================
    VidCreator — app instalable (PWA)
    Datos en el teléfono (IndexedDB). IA y voces IA vía /api (Vercel).
@@ -386,7 +390,8 @@ const LOGO = '<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect wid
 const S = {
   docs: {}, loaded: false, view: "home", pid: null, tab: "guion",
   media: {}, takes: {}, imgCache: {}, suggest: {}, busy: {}, sheet: null, ed: null, au: null, rec: null,
-  status: undefined, voices: null, voiceMode: "mia", ttsPart: "all", installEvt: null
+  status: undefined, voices: null, voiceMode: "mia", ttsPart: "all", installEvt: null,
+  ex: { vertical: false, subs: true, music: true }, lastExport: null
 };
 const TABS = [["guion", "Guión"], ["voz", "Voz"], ["media", "Fotos y tomas"], ["mini", "Miniatura"], ["titulos", "Títulos"], ["shorts", "Shorts"], ["orig", "Originalidad"], ["publicar", "Publicar"]];
 const cur = () => (S.pid && S.docs[S.pid] && S.docs[S.pid].kind === "project") ? Object.assign(S.docs[S.pid], { id: S.pid }) : null;
@@ -761,7 +766,7 @@ function cueChunks(text) {
   return out;
 }
 function speechBounds(x) {
-  const rms = AU.frameRms(x, Math.round(x.sr * 0.02)), th = Math.max(0.006, AU.floor(rms) * 2.2);
+  const rms = AU.frameRms(x, Math.round(x.sr * 0.02)), th = AU.thresh(rms, 2.2);
   let a = 0, b = rms.length - 1;
   while (a < b && rms[a] < th) a++;
   while (b > a && rms[b] < th) b--;
@@ -770,8 +775,9 @@ function speechBounds(x) {
   return { start: a * 0.02, end: (b + 1) * 0.02, pauses };
 }
 // Reparte las frases en el tiempo según su largo y las ajusta a las pausas reales de la voz.
-function makeCues(text, x) {
-  const chunks = cueChunks(text); if (!chunks.length) return [];
+function makeCues(text, x) { return timeChunks(cueChunks(text), x); }
+function timeChunks(chunks, x) {
+  if (!chunks.length) return [];
   const { start, end, pauses } = speechBounds(x);
   const total = chunks.reduce((s, c) => s + c.length, 0), span = Math.max(0.5, end - start);
   const bounds = [start]; let acc = 0;
@@ -791,6 +797,80 @@ function wrap2(t) {
 }
 const srtTime = s => { const ms = Math.max(0, Math.round(s * 1000)); return [Math.floor(ms / 3600000), Math.floor(ms % 3600000 / 60000), Math.floor(ms % 60000 / 1000)].map(v => String(v).padStart(2, "0")).join(":") + "," + String(ms % 1000).padStart(3, "0"); };
 const toSRT = cues => cues.map((c, i) => (i + 1) + "\n" + srtTime(c.a) + " --> " + srtTime(c.b) + "\n" + wrap2(c.text)).join("\n\n") + "\n";
+/* ---------- capítulos automáticos ---------- */
+function chTitle(t) {
+  const w = String(t).replace(/[.!?:;,].*$/s, "").trim().split(/\s+/).slice(0, 7).join(" ");
+  return w ? w.charAt(0).toUpperCase() + w.slice(1) : "Parte";
+}
+function chapterSegments(script) {
+  const secs = sections(script || ""); const out = []; let intro = "";
+  for (const s of secs) {
+    const txt = cleanSpeech(s.text);
+    if (s.name === "GANCHO" || s.name === "INTRO") { intro += " " + txt; continue; }
+    if (intro.trim()) { out.push({ title: "Introducción", text: intro.trim() }); intro = ""; }
+    if (s.name === "DESARROLLO") {
+      let seg = null;
+      for (const para of txt.split(/\n+/).map(x => x.trim()).filter(Boolean)) {
+        const m = para.match(/^\d+[.)]\s*(.*)$/);
+        if (m || !seg) { seg = { title: chTitle(m ? m[1] : para), text: m ? m[1] : para }; out.push(seg); }
+        else seg.text += " " + para;
+      }
+    } else out.push({ title: "Conclusión", text: txt });
+  }
+  if (intro.trim()) out.unshift({ title: "Introducción", text: intro.trim() });
+  return out.filter(s => s.text);
+}
+const fmtTs = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : String(m).padStart(2, "0")) + ":" + String(sec).padStart(2, "0"); };
+// YouTube pide: el primero en 00:00, al menos 3 capítulos y cada uno de 10 segundos o más.
+function makeChapters(script, x) {
+  const segs = chapterSegments(script); if (segs.length < 2) return { error: "Ordena tu guión en secciones (Corregir y estructurar o una plantilla) para calcular capítulos." };
+  const all = []; segs.forEach((s, i) => cueChunks(s.text).forEach(c => all.push({ c, i })));
+  const cues = timeChunks(all.map(a => a.c), x);
+  let ch = segs.map((s, i) => ({ title: s.title, t: (cues[all.findIndex(a => a.i === i)] || { a: 0 }).a }));
+  ch[0].t = 0;
+  const total = AU.dur(x);
+  const merged = [];
+  ch.forEach((c, i) => {
+    const next = i + 1 < ch.length ? ch[i + 1].t : total;
+    if (merged.length && next - c.t < 10) return;
+    if (merged.length && c.t - merged[merged.length - 1].t < 10) return;
+    merged.push(c);
+  });
+  if (merged.length < 3) return { error: "El video es muy corto o tiene pocas secciones: YouTube necesita al menos 3 capítulos de 10 segundos.", list: merged };
+  return { list: merged, text: merged.map(c => fmtTs(c.t) + " " + c.title).join("\n") };
+}
+
+/* ---------- puntaje SEO ---------- */
+function seoCheck(p) {
+  const kw = norm(p.keyword || "").trim();
+  const title = p.title || "", desc = p.description || "";
+  const tags = (p.tagsText || "").split(",").map(s => s.trim()).filter(Boolean);
+  const items = []; const add = (st, l, d) => items.push({ st, l, d });
+  const tl = title.length;
+  add(!tl ? "bad" : tl >= 20 && tl <= 60 ? "ok" : tl <= 70 ? "warn" : "bad", "Largo del título", tl ? tl + " caracteres. Lo ideal es entre 20 y 60." : "Falta el título.");
+  const words = kw.split(/\s+/).filter(w => w.length > 2);
+  const hasAll = t => words.length > 0 && words.every(w => norm(t).includes(w));
+  const hasSome = t => words.some(w => norm(t).includes(w));
+  if (words.length) {
+    add(hasAll(title) ? "ok" : hasSome(title) ? "warn" : "bad", "Palabra clave en el título", hasAll(title) ? "Aparece completa." : "Ponla en el título, mejor al principio.");
+    const head = desc.slice(0, 160);
+    add(hasAll(head) ? "ok" : hasSome(head) ? "warn" : "bad", "Palabra clave al inicio de la descripción", "Las 2 primeras líneas se ven sin abrir la descripción.");
+    add(tags.some(t => hasAll(t)) ? "ok" : tags.some(t => hasSome(t)) ? "warn" : "bad", "Palabra clave en las etiquetas", "Incluye la frase exacta como una etiqueta.");
+  } else add("bad", "Palabra clave principal", "Escríbela arriba: es lo que buscaría alguien para encontrar tu video.");
+  const dw = (desc.match(/\S+/g) || []).length;
+  add(dw >= 100 ? "ok" : dw >= 40 ? "warn" : "bad", "Descripción", dw + " palabras. Lo ideal es 100 o más.");
+  const ts = (desc.match(/^\s*\d{1,2}:\d{2}(:\d{2})?\s+\S/gm) || []).length, zero = /^\s*0?0:00\s+\S/m.test(desc);
+  add(ts >= 3 && zero ? "ok" : "warn", "Capítulos", ts >= 3 && zero ? ts + " capítulos en la descripción." : "Agrégalos con “Calcular capítulos”. Ayudan a que vean más del video.");
+  const tagLen = tags.join(",").length;
+  add(tags.length >= 5 && tagLen <= 500 ? "ok" : tags.length && tagLen <= 500 ? "warn" : "bad", "Etiquetas", tags.length + " etiquetas, " + tagLen + " de 500 caracteres.");
+  const hs = (desc.match(/#[\wáéíóúñü]+/gi) || []).length;
+  add(hs >= 1 && hs <= 3 ? "ok" : "warn", "Hashtags", hs ? hs + " en la descripción. Lo ideal es de 1 a 3." : "Agrega de 1 a 3 hashtags al final de la descripción.");
+  if (tl) add(/[a-záéíóúñ]/.test(title) ? "ok" : "warn", "Título sin todo en mayúsculas", /[a-záéíóúñ]/.test(title) ? "Bien." : "Todo en mayúsculas se ve como spam. Destaca solo 1 o 2 palabras.");
+  add(p.thumbDone ? "ok" : "warn", "Miniatura", p.thumbDone ? "Lista." : "Descárgala desde la pestaña Miniatura.");
+  const score = Math.round(items.reduce((s, i) => s + (i.st === "ok" ? 1 : i.st === "warn" ? 0.5 : 0), 0) / items.length * 100);
+  return { items, score };
+}
+
 function sectionText(script, name) { const s = sections(script || "").find(x => x.name === name); return s ? cleanSpeech(s.text) : ""; }
 function speechText(p, t) {
   if (t && t.text) return t.text;
@@ -894,12 +974,18 @@ const AU = {
     }
     return r;
   },
-  floor(rms) { const s = Array.from(rms).sort((a, b) => a - b); return s[Math.floor(s.length * 0.15)] || 0; },
+  floor(rms) { const s = Array.from(rms).sort((a, b) => a - b); return s[Math.floor(s.length * 0.05)] || 0; },
+  // Umbral entre ruido de fondo y voz: sirve aunque la grabación casi no tenga pausas.
+  thresh(rms, k) {
+    const s = Array.from(rms).sort((a, b) => a - b);
+    const lo = s[Math.floor(s.length * 0.05)] || 0, hi = s[Math.floor(s.length * 0.75)] || 0;
+    return Math.max(0.004, Math.min(lo * (k || 2.2), hi * 0.3));
+  },
   // Acorta pausas largas: deja ~0.12 s a cada lado de la pausa.
   removeSilence(x, minSil, keep) {
     minSil = minSil || 0.35; keep = keep || 0.12;
     const win = Math.round(x.sr * 0.02), rms = this.frameRms(x, win);
-    const th = Math.max(0.006, this.floor(rms) * 2.2);
+    const th = this.thresh(rms, 2.2);
     const keepF = Math.round(keep / 0.02), minF = Math.round(minSil / 0.02);
     const segs = []; let f = 0, start = 0;
     while (f < rms.length) {
@@ -922,7 +1008,7 @@ const AU = {
   // Compuerta de ruido suave: baja el ruido de fondo en las pausas.
   gate(x) {
     const win = Math.round(x.sr * 0.02), rms = this.frameRms(x, win);
-    const open = Math.max(0.004, this.floor(rms) * 3);
+    const open = this.thresh(rms, 3);
     const att = Math.exp(-1 / (x.sr * 0.005)), rel = Math.exp(-1 / (x.sr * 0.12));
     const out = new Float32Array(x.data.length); let g = 1;
     for (let i = 0; i < x.data.length; i++) {
@@ -1138,7 +1224,7 @@ async function openPreview(takeId) {
   let cues = [];
   try { cues = makeCues(speechText(p, t), await decodeBlob(S.takes[t.id].blob)); } catch (e) {}
   const audio = new Audio(S.takes[t.id].url);
-  S.pv = { takeId: t.id, imgs, cues, audio, idx: -1 };
+  S.pv = { takeId: t.id, imgs, cues, audio, idx: -1 }; S.lastExport = null;
   audio.ontimeupdate = pvTick;
   audio.onplay = audio.onpause = audio.onended = () => { if (S.sheet && S.sheet.type === "preview") { const b = document.querySelector('[data-act="pvPlay"]'); if (b) b.innerHTML = ic(audio.paused ? "play" : "pause") + (audio.paused ? "Reproducir" : "Pausa"); } };
   S.sheet = { type: "preview" }; renderSheet(); pvTick();
@@ -1360,6 +1446,7 @@ function viewSettings() {
     '<div class="card"><h3>Instalar en el teléfono</h3>' +
     (S.installEvt ? '<button class="btn primary" data-act="install">Instalar VidCreator</button>' :
       '<p class="hint">' + (isIOS ? "En iPhone: abre esta página en Safari, toca Compartir y luego “Agregar a inicio”." : "En Android: en el menú ⋮ de Chrome toca “Instalar app” o “Agregar a pantalla principal”.") + "</p>") + "</div>" +
+    '<p class="hint" style="text-align:center">VidCreator ' + APP_VERSION + "</p>" +
     '<div class="card"><h3>Respaldo</h3><p class="hint">Tus videos se guardan solo en este teléfono. Descarga un respaldo de los textos (guiones, títulos, descripciones) de vez en cuando. Las fotos, videos y audios no van en el respaldo.</p>' +
     '<div class="actions"><button class="btn" data-act="backup">' + ic("dl") + 'Descargar respaldo</button><button class="btn" data-act="restore">' + ic("up") + "Restaurar</button></div></div>" +
     "</section>";
@@ -1418,11 +1505,13 @@ function tabShorts(p) {
   const sh = p.shorts || [];
   const cards = sh.map((s, i) => {
     const w = (String(s.guion).match(/\S+/g) || []).length;
+    const rt = (p.takes || []).find(t => t.text === s.guion && S.takes[t.id]);
     return '<div class="card"><div class="lbl-row"><h3 style="font-size:15px;color:var(--fg);letter-spacing:0">' + esc(s.titulo) + '</h3><span class="mono muted">≈' + Math.round(w / 2.5) + " s</span></div>" +
       '<div class="sug-text" style="max-height:220px">' + esc(s.guion) + "</div>" +
       (s.texto_miniatura ? '<p class="hint">Texto de miniatura: <b>' + esc(s.texto_miniatura) + "</b></p>" : "") +
       '<div class="edgrid"><button class="btn sm" data-act="shortRec" data-i="' + i + '">' + ic("mic") + 'Grabar</button><button class="btn sm" data-act="shortCopy" data-i="' + i + '">' + ic("copy") + "Copiar</button>" +
-      '<button class="btn sm" data-act="shortThumb" data-i="' + i + '">' + ic("image") + 'Miniatura 9:16</button><button class="btn sm ghost danger" data-act="shortDel" data-i="' + i + '">Quitar</button></div></div>';
+      '<button class="btn sm" data-act="shortThumb" data-i="' + i + '">' + ic("image") + 'Miniatura 9:16</button><button class="btn sm ghost danger" data-act="shortDel" data-i="' + i + '">Quitar</button></div>' +
+      (rt ? '<button class="btn primary" data-act="shortVideo" data-id="' + rt.id + '">' + ic("video") + "Crear video vertical con tu grabación</button>" : "") + "</div>";
   }).join("");
   return '<section class="stack">' +
     '<p class="hint">Cada video largo puede darte 2 o 3 Shorts. Atraen gente nueva al canal con el mismo trabajo.</p>' +
@@ -1675,12 +1764,157 @@ function tabPublicar(p, a) {
     "</div></div>" +
     '<button class="toggle' + (p.synthetic ? " on" : "") + '" data-act="synthetic"><span class="sw-t"></span><span><b>El video muestra personas, lugares o hechos realistas creados con IA</b><br><span class="hint">' +
     (p.synthetic ? "Al subirlo, marca “Contenido alterado o sintético” en YouTube Studio." : "Si es así, YouTube pide declararlo al subir.") + "</span></span></button>" +
+    '<label class="field"><span>Palabra clave principal</span><input type="text" id="f-kw" data-field="keyword" value="' + esc(p.keyword || "") + '" placeholder="Lo que buscaría alguien. Ej: cómo ahorrar dinero"></label>' +
     '<label class="field"><span>Descripción</span><textarea id="f-desc" data-field="description" rows="8" placeholder="Escribe la descripción o genérala desde tu guión">' + esc(p.description) + "</textarea></label>" +
     '<label class="field"><span>Etiquetas (separadas por coma)</span><input type="text" id="f-tags" data-field="tagsText" value="' + esc(p.tagsText) + '"></label>' +
     '<div class="actions"><button class="btn primary" data-act="genDesc"' + (S.busy.desc ? " disabled" : "") + ">" + ic("wand") + 'Generar descripción</button><button class="btn" data-act="copyDesc">' + ic("copy") + "Copiar</button></div>" +
-    busyUI("desc") + aiNote() +
+    busyUI("desc") + aiNote() + chaptersCard(p) + seoCard(p) +
     '<div class="actions"><button class="btn" data-act="pkg">' + ic("dl") + 'Descargar paquete (.md)</button><a class="btn" href="https://studio.youtube.com" target="_blank" rel="noopener">' + ic("ext") + "Abrir YouTube Studio</a></div>" +
     '<p class="hint">El paquete trae guión, título, descripción, etiquetas y la checklist, para tenerlo a mano mientras editas en CapCut y subes el video.</p></section>';
+}
+
+function fullTakes(p) { return (p.takes || []).filter(t => S.takes[t.id] && !t.text && (!t.part || t.part === "all")); }
+function chaptersCard(p) {
+  const takes = fullTakes(p); const ch = p.chapters;
+  return '<div class="card"><div class="lbl-row"><h3>Capítulos</h3>' + (ch ? '<span class="mono muted">' + ch.split("\n").length + "</span>" : "") + "</div>" +
+    (ch ? '<pre class="sug-text" style="margin:0;font-family:var(--f-mono);font-size:13px">' + esc(ch) + '</pre><div class="actions"><button class="btn sm primary" data-act="chAdd">Agregar a la descripción</button><button class="btn sm" data-act="chCopy">' + ic("copy") + "Copiar</button></div>"
+      : '<p class="hint">Se calculan con las secciones de tu guión y los tiempos reales de tu narración completa. YouTube los muestra en la barra del video.</p>') +
+    (takes.length ? '<button class="btn" data-act="chCalc"' + (S.busy.chap ? " disabled" : "") + ">" + ic("wave") + (ch ? "Recalcular" : "Calcular capítulos") + " con “" + esc(takes[0].name) + "”</button>" + busyUI("chap")
+      : '<p class="hint">Primero graba o genera la narración del guión completo en la pestaña Voz.</p>') + "</div>";
+}
+function seoCard(p) {
+  const r = seoCheck(p); const col = r.score >= 80 ? "var(--ok)" : r.score >= 55 ? "var(--warn)" : "var(--bad)";
+  return '<div class="card" id="seoSlot"><div class="lbl-row"><h3>Puntaje SEO</h3><b style="font-family:var(--f-display);font-size:22px;color:' + col + '">' + r.score + "</b></div>" +
+    '<div class="meter"><i style="width:' + r.score + "%;background:" + col + '"></i></div><div>' +
+    r.items.map(i => '<div class="check"><span class="ck ' + (i.st === "ok" ? "ok" : i.st === "warn" ? "warn" : "") + '">' + (i.st === "ok" ? ic("check") : i.st === "warn" ? "!" : "") + "</span><b>" + esc(i.l) + "</b><p>" + esc(i.d) + "</p></div>").join("") +
+    "</div></div>";
+}
+
+/* ---------- exportar video (en el teléfono) ---------- */
+function pickVideoMime() {
+  const opts = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  for (const m of opts) if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+async function decodeBuf(blob) {
+  const ab = await blob.arrayBuffer();
+  return await new Promise((res, rej) => { const pr = ac().decodeAudioData(ab, res, rej); if (pr && pr.then) pr.then(res, rej); });
+}
+const once = (el, ev) => new Promise(r => el.addEventListener(ev, r, { once: true }));
+function loadImage(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; }); }
+function wrapLines(c, text, maxW) {
+  const words = text.split(/\s+/); const lines = []; let line = "";
+  for (const w of words) { const t = line ? line + " " + w : w; if (c.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t; }
+  if (line) lines.push(line); return lines;
+}
+function drawFrame(c, W, H, t, dur, vis, cues, accent) {
+  c.fillStyle = "#000"; c.fillRect(0, 0, W, H);
+  if (vis.length) {
+    const n = vis.length, i = Math.min(n - 1, Math.floor(t / dur * n)), local = (t - i * dur / n) / (dur / n);
+    const v = vis[i];
+    if (v.type === "vid") vis.forEach((o, k) => { if (o.type === "vid") { if (k === i && o.el.paused) o.el.play().catch(() => {}); if (k !== i && !o.el.paused) o.el.pause(); } });
+    const iw = v.type === "img" ? v.el.naturalWidth : v.el.videoWidth, ih = v.type === "img" ? v.el.naturalHeight : v.el.videoHeight;
+    if (iw && ih) {
+      const z = v.type === "img" ? 1 + 0.1 * Math.min(1, Math.max(0, local)) : 1;
+      const r = Math.max(W / iw, H / ih) * z, w = iw * r, h = ih * r;
+      try { c.drawImage(v.el, (W - w) / 2, (H - h) / 2, w, h); } catch (e) {}
+    }
+  } else {
+    const g = c.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#0a1626"); g.addColorStop(1, "#103a3a"); c.fillStyle = g; c.fillRect(0, 0, W, H);
+  }
+  const cue = cues.find(q => t >= q.a && t < q.b);
+  if (cue) {
+    const vertical = H > W, size = Math.round((vertical ? W * 0.062 : H * 0.058));
+    c.font = "800 " + size + "px 'Plus Jakarta Sans', system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.lineJoin = "round";
+    const lines = wrapLines(c, cue.text, W * 0.84).slice(0, 3);
+    const lh = size * 1.25, baseY = vertical ? H * 0.70 : H * 0.88 - (lines.length - 1) * lh;
+    lines.forEach((l, k) => { const y = baseY + k * lh; c.lineWidth = size * 0.22; c.strokeStyle = "rgba(0,0,0,.9)"; c.strokeText(l, W / 2, y); c.fillStyle = "#fff"; c.fillText(l, W / 2, y); });
+    if (vertical) { c.fillStyle = accent; c.fillRect(W / 2 - 40, baseY - size * 0.95, 80, 6); }
+  }
+}
+async function exportVideo(p) {
+  const pv = S.pv; if (!pv) return;
+  const t = (p.takes || []).find(x => x.id === pv.takeId); const tb = S.takes[pv.takeId];
+  if (!t || !tb) { toast("Elige una narración."); return; }
+  const mime = pickVideoMime();
+  if (!mime || !HTMLCanvasElement.prototype.captureStream) { toast("Este navegador no puede crear videos. Usa Chrome actualizado."); return; }
+  pv.audio.pause();
+  const ex = S.ex;
+  await runBusy("export", "Preparando el video", async (signal, setLabel) => {
+    let wake = null; try { if (navigator.wakeLock) wake = await navigator.wakeLock.request("screen"); } catch (e) {}
+    const W = ex.vertical ? 720 : 1280, H = ex.vertical ? 1280 : 720;
+    const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d");
+    const blobs = S.media[p.id] || {}; const vis = [];
+    for (const m of p.media || []) {
+      const b = blobs[m.id]; if (!b) continue;
+      try {
+        if (m.kind === "image") vis.push({ type: "img", el: getImg(m.id) || await loadImage(b.url) });
+        else { const v = document.createElement("video"); v.src = b.url; v.muted = true; v.playsInline = true; v.loop = true; v.preload = "auto"; await Promise.race([once(v, "loadeddata"), new Promise(r => setTimeout(r, 4000))]); if (v.videoWidth) vis.push({ type: "vid", el: v }); }
+      } catch (e) {}
+    }
+    const actx = ac(); if (actx.state === "suspended") await actx.resume();
+    const nBuf = await decodeBuf(tb.blob);
+    const mono = await decodeBlob(tb.blob);
+    const cues = ex.subs ? makeCues(speechText(p, t), mono) : [];
+    const dest = actx.createMediaStreamDestination();
+    const nSrc = actx.createBufferSource(); nSrc.buffer = nBuf; nSrc.connect(dest);
+    let mSrc = null; const startAt = actx.currentTime + 0.25;
+    if (p.music && ex.music !== false) {
+      const mBlob = await DB.get("blobs", p.music.id).catch(() => null);
+      if (mBlob) {
+        const mBuf = await decodeBuf(mBlob); mSrc = actx.createBufferSource(); mSrc.buffer = mBuf; mSrc.loop = true;
+        const g = actx.createGain(); mSrc.connect(g); g.connect(dest);
+        // La música baja cuando hablas y sube en las pausas.
+        const base = (p.musicVol ?? 40) / 100 * 0.4, duck = base * 0.3;
+        const env = AU.frameRms(mono, Math.round(mono.sr * 0.05)), th = AU.thresh(env, 2.5);
+        g.gain.setValueAtTime(duck, startAt); let prev = duck;
+        for (let i = 0; i < env.length; i++) { const target = env[i] > th ? duck : base; if (target !== prev) { g.gain.setTargetAtTime(target, startAt + i * 0.05, 0.15); prev = target; } }
+        g.gain.setTargetAtTime(0, startAt + nBuf.duration, 0.3);
+      }
+    }
+    const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: ex.vertical ? 5000000 : 6000000 });
+    const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const accent = (p.thumb && p.thumb.color) || "#3EE6A0";
+    drawFrame(c, W, H, 0, nBuf.duration, vis, cues, accent);
+    rec.start(500); nSrc.start(startAt); if (mSrc) mSrc.start(startAt);
+    const dur = nBuf.duration;
+    await new Promise(res => {
+      const tick = () => {
+        if (signal.aborted) return res();
+        const tt = Math.max(0, actx.currentTime - startAt);
+        drawFrame(c, W, H, tt, dur, vis, cues, accent);
+        setLabel("Creando video " + Math.min(100, Math.round(tt / dur * 100)) + "% · no cierres la app");
+        if (tt >= dur + 0.4) return res();
+        setTimeout(tick, 33);
+      };
+      tick();
+    });
+    const stopped = once(rec, "stop"); rec.stop(); await stopped;
+    try { nSrc.stop(); } catch (e) {} try { mSrc && mSrc.stop(); } catch (e) {}
+    vis.forEach(v => { if (v.type === "vid") v.el.pause(); });
+    stream.getTracks().forEach(tr => tr.stop());
+    if (wake) wake.release().catch(() => {});
+    if (signal.aborted) { toast("Exportación cancelada"); return; }
+    const type = mime.split(";")[0], ext = type.includes("mp4") ? "mp4" : "webm";
+    S.lastExport = { blob: new Blob(chunks, { type }), name: slug((p.title || p.name) + (ex.vertical ? "-short" : "")) + "." + ext, ext };
+    bumpStage(p, "editado"); touch(p); save(p.id);
+    toast("Video listo");
+  });
+}
+
+function exportCard(p) {
+  const ex = S.ex, le = S.lastExport;
+  return '<div class="card"><h3>Exportar video</h3>' +
+    '<div class="seg" style="width:100%"><button style="flex:1" data-act="exFmt" data-v="h" class="' + (!ex.vertical ? "on" : "") + '">Horizontal 16:9</button><button style="flex:1" data-act="exFmt" data-v="v" class="' + (ex.vertical ? "on" : "") + '">Vertical 9:16 (Short)</button></div>' +
+    '<button class="toggle' + (ex.subs ? " on" : "") + '" data-act="exSubs"><span class="sw-t"></span><span>Subtítulos dentro del video</span></button>' +
+    (p.music ? '<div class="lbl-row"><span>Música: <b style="color:var(--fg)">' + esc(p.music.name) + '</b></span><button class="btn sm ghost danger" data-act="musicDel">Quitar</button></div>' +
+      '<label class="slider"><span>Volumen</span><input type="range" id="ex-mv" data-ex="musicVol" min="5" max="100" value="' + (p.musicVol ?? 40) + '"><span class="mono" id="ex-mvv">' + (p.musicVol ?? 40) + "%</span></label>" +
+      '<p class="hint">La música baja sola cuando hablas y sube en las pausas.</p>'
+      : '<button class="btn" data-act="musicAdd">' + ic("up") + "Agregar música de fondo</button>" + '<p class="hint">Usa música libre de derechos, por ejemplo de la Biblioteca de audio de YouTube Studio, para no tener reclamos.</p>') +
+    '<button class="btn primary" data-act="exRun"' + (S.busy.export ? " disabled" : "") + ">" + ic("video") + "Crear video</button>" + busyUI("export") +
+    (le ? '<div class="actions"><button class="btn primary" data-act="exShare">' + ic("share") + 'Compartir</button><button class="btn" data-act="exSave">' + ic("dl") + "Descargar ." + le.ext + "</button></div>" : "") +
+    '<p class="hint">Se crea en tiempo real: tarda lo mismo que dura la narración. Deja la pantalla encendida y la app abierta. Ideal para Shorts y videos cortos; para videos largos con muchos cortes, CapCut sigue siendo mejor.</p></div>';
 }
 
 /* ---------- hojas (paneles inferiores) ---------- */
@@ -1728,7 +1962,8 @@ function renderSheet() {
       '<div class="meter"><i id="pvBar" style="width:0%;background:var(--accent)"></i></div>' +
       '<div class="chips scrollx">' + takes.map(t => '<button class="chipbtn' + (t.id === pv.takeId ? " on" : "") + '" data-act="pvTake" data-id="' + t.id + '">' + esc(t.name) + "</button>").join("") + "</div>" +
       '<div class="actions"><button class="btn primary" data-act="pvPlay">' + ic(playing ? "pause" : "play") + (playing ? "Pausa" : "Reproducir") + '</button><button class="btn" data-act="pvSrt">' + ic("dl") + "Subtítulos .srt</button></div>" +
-      '<p class="hint">' + (pv.imgs.length ? pv.imgs.length + " fotos repartidas a lo largo de la narración. " : "Sube fotos o videos en “Fotos y tomas” para verlos aquí. ") + "Es una vista previa para revisar ritmo y subtítulos; el montaje final lo haces en CapCut.</p>";
+      '<p class="hint">' + (pv.imgs.length ? pv.imgs.length + " fotos repartidas a lo largo de la narración. " : "Sube fotos o videos en “Fotos y tomas” para verlos aquí. ") + "Revisa el ritmo y los subtítulos antes de exportar.</p>" +
+      exportCard(p);
   } else if (s.type === "menu") {
     inner = '<div class="panel-h"><h3>' + esc(p.name) + "</h3>" + close + '</div><div class="menu-list"><button class="btn" data-act="dup">' + ic("copy") + 'Duplicar video</button><button class="btn danger" data-act="askDel">' + ic("x") + "Eliminar video</button></div>";
   } else if (s.type === "confirmDel") {
@@ -2010,6 +2245,33 @@ async function act(name, el) {
       toast("Subtítulos listos. En CapCut: Texto → Importar subtítulos. Ajusta los tiempos si hace falta."); break;
     }
 
+    /* capítulos */
+    case "chCalc": {
+      const tk = fullTakes(p)[0]; if (!tk) break;
+      await runBusy("chap", "Calculando capítulos", async () => {
+        const r = makeChapters(p.script, await decodeBlob(S.takes[tk.id].blob));
+        if (r.error) { toast(r.error); return; }
+        p.chapters = r.text; touch(p); save(p.id);
+      });
+      break;
+    }
+    case "chCopy": copyText(p.chapters || ""); break;
+    case "chAdd": {
+      if (!p.chapters) break;
+      const clean = (p.description || "").split("\n").filter(l => !/^\s*\d{1,2}:\d{2}(:\d{2})?\s+\S/.test(l) && l.trim() !== "Capítulos:").join("\n").trim();
+      p.description = (clean ? clean + "\n\n" : "") + "Capítulos:\n" + p.chapters; touch(p); save(p.id); render(); toast("Capítulos agregados a la descripción"); break;
+    }
+
+    /* exportar video */
+    case "exFmt": S.ex.vertical = d.v === "v"; renderSheet(); break;
+    case "exSubs": S.ex.subs = !S.ex.subs; renderSheet(); break;
+    case "musicAdd": $("#fileMusic").click(); break;
+    case "musicDel": if (p.music) { DB.del("blobs", p.music.id).catch(() => {}); delete p.music; touch(p); save(p.id); renderSheet(); } break;
+    case "exRun": exportVideo(p); break;
+    case "exShare": if (S.lastExport) shareFile(S.lastExport.name, S.lastExport.blob); break;
+    case "exSave": if (S.lastExport) saveFile(S.lastExport.name, S.lastExport.blob); break;
+    case "shortVideo": { S.ex.vertical = true; openPreview(d.id); break; }
+
     case "aiCopy": if (S.manual) copyText(S.manual.prompt); break;
     case "aiImg": if (S.manual && S.manual.images) shareFile(slug(p.title || p.name) + "-miniatura.jpg", S.manual.images[0]); break;
     case "aiApply": {
@@ -2188,6 +2450,7 @@ const onInput = e => {
   if (el.dataset.setting) { settings()[el.dataset.setting] = el.value; save("settings", 800); return; }
   if (el.dataset.shot) { const q = cur(); const s = q && (q.shots || []).find(x => x.id === el.dataset.shot); if (s) { s.done = el.checked; const lb = el.closest(".shot"); if (lb) lb.classList.toggle("done", s.done); touch(q); save(q.id); } return; }
   if (el.id === "aiPaste" && S.manual) { S.manual.text = el.value; return; }
+  if (el.dataset.ex === "musicVol") { const q = cur(); if (q) { q.musicVol = +el.value; save(q.id); } const v = $("#ex-mvv"); if (v) v.textContent = el.value + "%"; return; }
   if (el.id === "teleSpeed" && S.rec) { S.rec.speed = +el.value; const s = el.parentElement.querySelector(".mono"); if (s) s.textContent = el.value; return; }
   if (el.dataset.au && S.au) {
     const st = S.au, v = +el.value;
@@ -2220,6 +2483,7 @@ const onInput = e => {
       document.querySelectorAll('.tab[data-t="orig"] .dot').forEach(dd => { dd.className = "dot " + a.level; });
     }, 500);
   }
+  if (["title", "description", "tagsText", "keyword"].includes(f)) { const slot = $("#seoSlot"); if (slot) slot.outerHTML = seoCard(p); }
   if (f === "title") {
     const len = el.value.length; const t = $("#tlen"); if (t) t.textContent = len + " / 100";
     const m = $("#tmeter"); if (m) { m.style.width = Math.min(100, len) + "%"; m.style.background = len === 0 ? "var(--line)" : len <= 60 ? "var(--ok)" : len <= 80 ? "var(--warn)" : "var(--bad)"; }
@@ -2243,6 +2507,15 @@ $("#fileAudio").addEventListener("change", async e => {
   try { const x = await decodeBlob(f); await addTake(p, AU.wav(x), "grabacion", f.name.replace(/\.[^.]+$/, "").slice(0, 60) || takeName(p, "grabacion"), AU.dur(x)); render(); toast("Audio agregado"); }
   catch (err) { toast("No se pudo leer ese archivo de audio."); }
 });
+$("#fileMusic").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; const p = cur(); if (!f || !p) return;
+  try {
+    await decodeBuf(f);
+    const id = "music-" + uid(); await DB.put("blobs", id, f);
+    if (p.music) DB.del("blobs", p.music.id).catch(() => {});
+    p.music = { id, name: f.name.replace(/\.[^.]+$/, "").slice(0, 60) }; touch(p); save(p.id); renderSheet(); toast("Música agregada");
+  } catch (err) { toast("No se pudo leer ese archivo de música."); }
+});
 $("#fileBackup").addEventListener("change", async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try {
@@ -2257,6 +2530,20 @@ window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.inst
 window.addEventListener("resize", () => drawWave());
 window.addEventListener("online", () => { loadStatus().then(() => { if (!isTyping()) render(); }); });
 
+/* ---------- aviso de versión nueva ---------- */
+async function checkVersion() {
+  try {
+    const r = await fetch("/version.json?t=" + Date.now(), { cache: "no-store" }); if (!r.ok) return;
+    const j = await r.json();
+    if (j.version && j.version !== APP_VERSION) $("#upd").hidden = false;
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkVersion(); });
+$("#updBtn").addEventListener("click", async () => {
+  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.update())); } catch (e) {}
+  location.reload();
+});
+
 /* ---------- arranque ---------- */
 (async function boot() {
   await DB.open();
@@ -2268,6 +2555,8 @@ window.addEventListener("online", () => { loadStatus().then(() => { if (!isTypin
   loadStatus().then(() => { if (!isTyping() && !S.sheet) render(); });
   if (document.fonts && document.fonts.load) document.fonts.load("100px Anton").then(() => drawThumb()).catch(() => {});
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(() => {});
+  checkVersion();
+  setInterval(checkVersion, 15 * 60 * 1000);
 })();
 </script>
 </body>

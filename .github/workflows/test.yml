@@ -1,0 +1,21 @@
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Revisar sintaxis de las funciones
+        run: for f in api/*.js lib/*.js sw.js; do node --check "$f"; done
+      - name: Instalar navegador de prueba
+        run: npm i --no-save jsdom@24.1.3
+      - name: Recorrer la app
+        run: node tests/smoke.cjs

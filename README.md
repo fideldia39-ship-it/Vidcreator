@@ -20,7 +20,13 @@ Se instala como app (PWA) desde el navegador. Tus videos, fotos y audios quedan 
 - **Guión:** plantillas guiadas (historia personal, tutorial, lista, error que cometí, comparación), corrección con IA y guardado de ganchos.
 - **Voz:** teleprompter, editor de audio, subtítulos .SRT para CapCut, voces IA y borrador del video con fotos y subtítulos.
 - **Fotos y tomas:** lista de tomas a grabar, fotos y videos con su origen, editor de fotos.
-- **Miniatura, Títulos, Shorts** (2 o 3 Shorts por video, con miniatura 9:16), **Originalidad** y **Publicar** (etapa, fecha, checklist, descripción y resultados a los 7 días).
+- **Miniatura, Títulos, Shorts** (2 o 3 Shorts por video, con miniatura 9:16), **Originalidad** y **Publicar** (etapa, fecha, checklist, descripción, capítulos automáticos, puntaje SEO y resultados a los 7 días).
+- **Exportar video:** desde "Ver borrador" crea el video horizontal o vertical en el teléfono, con fotos o clips, subtítulos y música que baja sola cuando hablas.
+- **Aviso de versión nueva:** cuando se publica un cambio aparece el botón Actualizar.
+
+## Pruebas
+
+Cada cambio en GitHub corre `tests/smoke.cjs`, que abre la app en un navegador simulado y recorre las funciones principales. Para correrla a mano: `npm i --no-save jsdom@24.1.3 && node tests/smoke.cjs`.
 
 ## Modo gratis
 
