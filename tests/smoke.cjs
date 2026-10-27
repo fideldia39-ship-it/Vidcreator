@@ -16,7 +16,23 @@ const dom = new JSDOM(html, {
         : k === "getImageData" ? () => ({ data: new Uint8ClampedArray(4) }) : () => {},
       set: () => true
     });
-    w.fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
+    // Respuestas simuladas de Google/YouTube para probar la conexión sin cuenta real.
+    const yt = {
+      "youtube/v3/channels": { items: [{ id: "UC1", snippet: { title: "Canal de Prueba", thumbnails: {} }, statistics: { subscriberCount: "1520", viewCount: "48000", videoCount: "2" }, contentDetails: { relatedPlaylists: { uploads: "UU1" } } }] },
+      "youtube/v3/playlistItems": { items: [{ contentDetails: { videoId: "v1" } }, { contentDetails: { videoId: "v2" } }] },
+      "youtube/v3/videos": { items: [
+        { id: "v1", snippet: { title: "Cómo ordenar tus gastos en 20 minutos", publishedAt: "2026-09-01T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "3200", likeCount: "210", commentCount: "31" } },
+        { id: "v2", snippet: { title: "Mi primer error con la tarjeta", publishedAt: "2026-09-15T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "900", likeCount: "40", commentCount: "5" } }] },
+      "filters=video": { columnHeaders: [{ name: "views" }, { name: "averageViewPercentage" }, { name: "averageViewDuration" }], rows: [[1250, 47.36, 96]] },
+      "dimensions=video": { columnHeaders: [{ name: "video" }, { name: "views" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }, { name: "subscribersGained" }], rows: [["v1", 800, 900, 95, 52.1, 12], ["v2", 300, 200, 60, 38.4, 2]] }
+    };
+    w.fetch = async (url) => {
+      url = String(url);
+      const key = Object.keys(yt).find(k => url.includes(k));
+      if (url.includes("googleapis.com") && key) return { ok: true, status: 200, json: async () => yt[key] };
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    w.google = { accounts: { oauth2: { initTokenClient: o => ({ requestAccessToken: () => setTimeout(() => o.callback({ access_token: "tok", expires_in: 3600 }), 5) }), revoke: () => {} } } };
     w.URL.createObjectURL = () => "blob:x";
     w.scrollTo = () => {};
     w.HTMLMediaElement.prototype.pause = function () {};
@@ -107,6 +123,22 @@ const check = (label, cond) => results.push([label, !!cond]);
   check("quitar silencios con pocas pausas", sil[1] < sil[0] - 1 && sil[1] > 40);
   const srt = w.eval(`toSRT([{ a: 0.5, b: 2.75, text: "Hola" }])`);
   check("formato SRT", srt.includes("00:00:00,500 --> 00:00:02,750"));
+
+  // conexión con YouTube (simulada)
+  click('[data-act="home"]'); await wait(20); click('[data-act="settings"]'); await wait(30);
+  type("#f-gcid", "123-prueba.apps.googleusercontent.com"); await wait(900);
+  click('[data-act="home"]'); await wait(20); click('[data-act="homeView"][data-v="canal"]'); await wait(30);
+  check("YouTube: botón conectar", shown("Conectar mi canal"));
+  click('[data-act="ytSync"]'); await wait(200);
+  check("YouTube: estadísticas del canal", shown("Canal de Prueba") && shown("1.520") && shown("52% retención"));
+  const linked = w.eval(`projects().find(q => q.ytId === "v1")`);
+  check("YouTube: vincula por título exacto", linked && linked.stage === "publicado");
+  click('[data-act="homeView"][data-v="tablero"]'); await wait(30); click('[data-act="stageFilter"][data-v="todos"]'); await wait(20);
+  [...doc.querySelectorAll('[data-act="open"]')].find(c => c.textContent.includes("Ejemplo")).dispatchEvent(new w.MouseEvent("click", { bubbles: true })); await wait(40);
+  click('[data-act="tab"][data-t="publicar"]'); await wait(30);
+  click('[data-act="ytResults"]'); await wait(150);
+  const res = w.eval("cur().results");
+  check("YouTube: trae vistas y retención a 7 días", res && res.views7 === "1250" && res.retention === "47.4");
 
   const failed = results.filter(r => !r[1]);
   results.forEach(([l, ok]) => console.log((ok ? "OK   " : "FAIL ") + l));

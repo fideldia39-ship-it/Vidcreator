@@ -271,6 +271,12 @@ mark{background:color-mix(in srgb,var(--warn) 30%,transparent);color:var(--fg);b
 .danger{color:var(--bad)}
 
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:40;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;max-width:min(92vw,460px);text-align:center;box-shadow:0 8px 24px rgb(0 0 0/.3)}
+select{appearance:auto}
+.ytv{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:center;text-decoration:none;color:var(--fg)}
+.ytv img,.ytv-ph{width:96px;aspect-ratio:16/9;border-radius:8px;object-fit:cover;background:var(--surface-2);display:block}
+.ytv-t{display:grid;gap:2px;min-width:0}
+.ytv-t b{font-size:14px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ytv-t span{font-size:12px;color:var(--muted)}
 .chanbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:700;font-size:15px;font-family:var(--f-display);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ob{display:grid;justify-items:center;gap:12px;text-align:center;padding-block:10px 4px}
 .ob h3{font-size:22px}
@@ -336,7 +342,7 @@ input[type=date]{width:100%;background:var(--surface);border:1px solid var(--lin
 
 <script>
 "use strict";
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 /* =========================================================
    VidCreator — app instalable (PWA)
    Datos en el teléfono (IndexedDB). IA y voces IA vía /api (Vercel).
@@ -489,6 +495,7 @@ async function loadStatus() {
   catch (e) { S.status = e.status === 401 ? { auth: false } : null; }
 }
 function apiErr(e) {
+  if (e && e.yt) return e.message;
   if (e && e.code === "invalid_json") return "La respuesta llegó incompleta. Toca el botón otra vez.";
   if (!e || !e.status) return navigator.onLine === false ? "Sin internet. Esta función necesita conexión." : "No se pudo conectar con el servidor.";
   if (e.status === 401) return "Código de acceso incorrecto. Revísalo en Ajustes.";
@@ -1367,6 +1374,7 @@ function viewHome() {
   const hv = S.homeView || "tablero";
   const seg = '<div class="seg" style="width:100%">' + [["tablero", "Videos"], ["calendario", "Calendario"], ["canal", "Mi canal"]].map(([k, l]) => '<button style="flex:1" data-act="homeView" data-v="' + k + '" class="' + (hv === k ? "on" : "") + '">' + l + "</button>").join("") + "</div>";
   const body = hv === "calendario" ? homeCal(list) : hv === "canal" ? homeCanal(list) : homeBoard(list);
+  if (hv === "canal" && settings().googleClientId) loadGIS().catch(() => {});
   return '<header class="top"><div class="brand">' + LOGO + "Vid<b>Creator</b></div>" + '<span class="sync" id="sync">' + syncLabel() + '</span><button class="icon" data-act="settings" aria-label="Ajustes">' + ic("gear") + "</button></header>" +
     (S.installEvt ? '<div class="install"><p>Instala VidCreator en tu teléfono para abrirla como una app.</p><button class="btn sm primary" data-act="install">Instalar</button></div>' : "") +
     '<section class="stack">' +
@@ -1439,7 +1447,7 @@ function homeCanal(list) {
   const best = withRes.slice().sort((a, b) => num(b.results.views7) - num(a.results.views7))[0];
   const hooks = st.hooks || [];
   const scoreCol = avg == null ? "var(--muted)" : avg >= 70 ? "var(--ok)" : avg >= 45 ? "var(--warn)" : "var(--bad)";
-  return '<div class="card"><h3>Salud del canal</h3>' +
+  return ytCard() + '<div class="card"><h3>Salud del canal</h3>' +
     '<div class="stat-grid"><div class="stat"><b style="color:' + scoreCol + '">' + (avg == null ? "–" : avg) + '</b><span>Originalidad promedio</span></div><div class="stat"><b>' + red.length + '</b><span>Videos en rojo</span></div><div class="stat"><b>' + iaCount + "</b><span>Con voz IA</span></div></div>" +
     (red.length ? '<p class="hint">Revisa antes de subir: ' + red.map(x => "<b>" + esc(x.p.name) + "</b>").join(", ") + ".</p>" : "") +
     (iaSens.length ? '<p class="hint" style="color:var(--bad)">Voz IA en temas de finanzas o salud: ' + iaSens.map(x => esc(x.p.name)).join(", ") + ". YouTube no los monetiza; grábalos con tu voz.</p>" : "") +
@@ -1479,6 +1487,9 @@ function viewSettings() {
     '<div class="card"><h3>Instalar en el teléfono</h3>' +
     (S.installEvt ? '<button class="btn primary" data-act="install">Instalar VidCreator</button>' :
       '<p class="hint">' + (isIOS ? "En iPhone: abre esta página en Safari, toca Compartir y luego “Agregar a inicio”." : "En Android: en el menú ⋮ de Chrome toca “Instalar app” o “Agregar a pantalla principal”.") + "</p>") + "</div>" +
+    '<div class="card"><h3>YouTube</h3>' +
+    '<label class="field"><span>Client ID de Google</span><input type="text" id="f-gcid" data-global="googleClientId" value="' + esc(s.googleClientId || "") + '" placeholder="123…apps.googleusercontent.com" autocomplete="off" autocapitalize="off" spellcheck="false"></label>' +
+    (chan().yt ? row("Canal conectado", esc(chan().yt.title)) + '<button class="btn ghost" data-act="ytDisconnect">Desconectar de este canal de la app</button>' : '<p class="hint">Después de pegarlo, conecta desde Inicio → Mi canal. Es un dato público de tu proyecto de Google Cloud; no es una contraseña.</p>') + "</div>" +
     '<div class="card"><h3>Apariencia</h3><div class="seg" style="width:100%">' + [["system", "Automático"], ["light", "Claro"], ["dark", "Oscuro"]].map(([k, l]) => '<button style="flex:1" data-act="theme" data-v="' + k + '" class="' + ((lsGet("vc_theme") || "system") === k ? "on" : "") + '">' + l + "</button>").join("") + "</div>" +
     '<button class="btn ghost" data-act="obOpen">Ver la bienvenida otra vez</button></div>' +
     '<p class="hint" style="text-align:center">VidCreator ' + APP_VERSION + "</p>" +
@@ -1794,7 +1805,8 @@ function tabPublicar(p, a) {
   const own = media.length ? Math.round(media.filter(m => m.origin === "propio").length / media.length * 100) : 0;
   const stg = stageOf(p); const res = p.results || {};
   const resCard = stg === "publicado" ? '<div class="card"><h3>Resultados a los 7 días</h3><div class="fields3">' +
-    [["views7", "Vistas"], ["retention", "Retención %"], ["ctr", "CTR %"]].map(([k, l]) => '<label class="field"><span>' + l + '</span><input type="text" inputmode="decimal" id="f-r-' + k + '" data-field="results.' + k + '" value="' + esc(res[k] || "") + '"></label>').join("") + "</div>" +
+    [["views7", "Vistas"], ["retention", "Retención %"], ["ctr", "CTR % (de Studio)"]].map(([k, l]) => '<label class="field"><span>' + l + '</span><input type="text" inputmode="decimal" id="f-r-' + k + '" data-field="results.' + k + '" value="' + esc(res[k] || "") + '"></label>').join("") + "</div>" +
+    ytLinkUI(p) +
     '<label class="field"><span>Qué aprendiste</span><textarea id="f-r-notes" data-field="results.notes" rows="3" placeholder="Ej: la miniatura con mi cara funcionó mejor">' + esc(res.notes || "") + "</textarea></label>" +
     '<p class="hint">Los encuentras en YouTube Studio → Estadísticas del video. En “Mi canal” verás qué formatos te funcionan mejor.</p></div>' : "";
   return '<section class="stack">' +
@@ -1820,6 +1832,14 @@ function tabPublicar(p, a) {
     '<p class="hint">El paquete trae guión, título, descripción, etiquetas y la checklist, para tenerlo a mano mientras editas en CapCut y subes el video.</p></section>';
 }
 
+function ytLinkUI(p) {
+  const yt = chan().yt;
+  if (!yt || !yt.list.length) return '<p class="hint">Conecta tu canal en Inicio → Mi canal para traer vistas y retención solas.</p>';
+  return '<label class="field"><span>Video en YouTube</span><select id="f-ytid" data-field="ytId"><option value="">Elegir…</option>' +
+    yt.list.map(v => '<option value="' + esc(v.id) + '"' + (p.ytId === v.id ? " selected" : "") + ">" + esc(v.title) + "</option>").join("") + "</select></label>" +
+    '<button class="btn" data-act="ytResults"' + (p.ytId && !S.busy.ytres ? "" : " disabled") + ">" + ic("dl") + "Traer resultados de YouTube</button>" + busyUI("ytres") +
+    (p.results && p.results.ytAt ? '<p class="hint">Actualizado ' + rel(p.results.ytAt) + (p.results.partial ? " · aún no cumple 7 días" : "") + "</p>" : "");
+}
 function fullTakes(p) { return (p.takes || []).filter(t => S.takes[t.id] && !t.text && (!t.part || t.part === "all")); }
 function chaptersCard(p) {
   const takes = fullTakes(p); const ch = p.chapters;
@@ -2237,6 +2257,14 @@ async function act(name, el) {
     case "hookCopy": { const h = (chan().hooks || []).find(x => x.id === d.id); if (h) copyText(h.text); break; }
     case "hookDel": { const st = chan(); st.hooks = (st.hooks || []).filter(x => x.id !== d.id); save("settings"); if (S.sheet) renderSheet(); render(); break; }
 
+    /* YouTube */
+    case "ytSync": ytSync(); break;
+    case "ytResults": ytResults(p); break;
+    case "ytDisconnect": {
+      try { if (YT.token && window.google) google.accounts.oauth2.revoke(YT.token, () => {}); } catch (e) {}
+      YT.token = null; delete chan().yt; save("settings"); render(); toast("Desconectado"); break;
+    }
+
     /* canales */
     case "chanOpen": S.sheet = { type: "channels" }; renderSheet(); break;
     case "chanPick": S.channelId = d.id; lsSet("vc_channel", d.id); S.sheet = null; S.stageFilter = "todos"; S.ideaSug = null; S.plan = null; renderSheet(); render(); break;
@@ -2586,6 +2614,7 @@ const onInput = e => {
   const el = e.target;
   if (el.dataset.tq) { const q = cur(); if (q) { q.answers = q.answers || {}; q.answers[el.dataset.tq] = el.value; touch(q); save(q.id, 800); } return; }
   if (el.dataset.chan) { chan()[el.dataset.chan] = el.value; save("settings", 800); return; }
+  if (el.dataset.global) { settings()[el.dataset.global] = el.value.trim(); save("settings", 800); return; }
   if (el.dataset.plan && S.plan) { S.plan[el.dataset.plan] = el.value; return; }
   if (el.dataset.shot) { const q = cur(); const s = q && (q.shots || []).find(x => x.id === el.dataset.shot); if (s) { s.done = el.checked; const lb = el.closest(".shot"); if (lb) lb.classList.toggle("done", s.done); touch(q); save(q.id); } return; }
   if (el.id === "aiPaste" && S.manual) { S.manual.text = el.value; return; }
@@ -2622,6 +2651,7 @@ const onInput = e => {
       document.querySelectorAll('.tab[data-t="orig"] .dot').forEach(dd => { dd.className = "dot " + a.level; });
     }, 500);
   }
+  if (f === "ytId") { render(); return; }
   if (["title", "description", "tagsText", "keyword"].includes(f)) { const slot = $("#seoSlot"); if (slot) slot.outerHTML = seoCard(p); }
   if (f === "title") {
     const len = el.value.length; const t = $("#tlen"); if (t) t.textContent = len + " / 100";
@@ -2668,6 +2698,130 @@ $("#fileBackup").addEventListener("change", async e => {
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.installEvt = e; if (S.view !== "project") render(); });
 window.addEventListener("resize", () => drawWave());
 window.addEventListener("online", () => { loadStatus().then(() => { if (!isTyping()) render(); }); });
+
+/* =========================================================
+   YOUTUBE: inicio de sesión con Google en el teléfono (solo lectura)
+   ========================================================= */
+const YT_SCOPES = "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly";
+const YT = { token: null, exp: 0, loading: null };
+const ytError = msg => Object.assign(new Error(msg), { yt: true });
+function loadGIS() {
+  if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+  if (YT.loading) return YT.loading;
+  YT.loading = new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = () => res(); sc.onerror = () => { YT.loading = null; rej(ytError("No se pudo cargar el inicio de sesión de Google. Revisa tu conexión.")); };
+    document.head.appendChild(sc);
+  });
+  return YT.loading;
+}
+async function ytToken() {
+  if (YT.token && Date.now() < YT.exp - 60000) return YT.token;
+  const cid = String(settings().googleClientId || "").trim();
+  if (!cid) throw ytError("Falta el Client ID de Google. Pégalo en Ajustes → YouTube.");
+  await loadGIS();
+  return new Promise((res, rej) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: cid, scope: YT_SCOPES,
+      callback: r => {
+        if (!r || r.error) return rej(ytError(r && r.error === "access_denied" ? "No diste permiso para leer tu canal." : "Google no entregó el permiso (" + ((r && r.error) || "error") + ")."));
+        YT.token = r.access_token; YT.exp = Date.now() + (Number(r.expires_in) || 3600) * 1000; res(YT.token);
+      },
+      error_callback: e => rej(ytError(e && e.type === "popup_closed" ? "Cerraste la ventana de Google antes de terminar." : "No se pudo abrir la ventana de Google. Permite las ventanas emergentes e intenta de nuevo."))
+    });
+    client.requestAccessToken({ prompt: chan().yt ? "" : "consent" });
+  });
+}
+function ytApiErr(status, j) {
+  const reason = j && j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason;
+  if (status === 401) { YT.token = null; return "La sesión con Google venció. Toca Actualizar otra vez."; }
+  if (reason === "accessNotConfigured" || /has not been used|is disabled/i.test((j && j.error && j.error.message) || "")) return "Activa “YouTube Data API v3” y “YouTube Analytics API” en tu proyecto de Google Cloud.";
+  if (reason === "quotaExceeded") return "Se acabó la cuota diaria gratis de YouTube. Mañana se renueva.";
+  if (status === 403) return "Google no dio acceso. Revisa que tu correo esté en Usuarios de prueba.";
+  return (j && j.error && j.error.message) || "YouTube respondió con un error (" + status + ").";
+}
+async function ytGet(url, signal) {
+  const tok = await ytToken();
+  const r = await fetch(url, { headers: { Authorization: "Bearer " + tok }, signal });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw ytError(ytApiErr(r.status, j));
+  return j;
+}
+const ytDay = d => isoOf(d);
+async function ytSync() {
+  await runBusy("yt", "Conectando con YouTube", async (signal, setLabel) => {
+    const ch = await ytGet("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&mine=true", signal);
+    const c = (ch.items || [])[0];
+    if (!c) throw ytError("Esta cuenta de Google no tiene canal. Al conectar, elige la cuenta (o la cuenta de marca) de tu canal.");
+    setLabel("Leyendo tus videos");
+    const uploads = c.contentDetails && c.contentDetails.relatedPlaylists && c.contentDetails.relatedPlaylists.uploads;
+    let vids = [];
+    if (uploads) {
+      const pl = await ytGet("https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=25&playlistId=" + encodeURIComponent(uploads), signal);
+      const ids = (pl.items || []).map(i => i.contentDetails && i.contentDetails.videoId).filter(Boolean);
+      if (ids.length) {
+        const v = await ytGet("https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=" + ids.join(","), signal);
+        vids = (v.items || []).map(x => ({ id: x.id, title: x.snippet.title, publishedAt: x.snippet.publishedAt,
+          thumb: ((x.snippet.thumbnails || {}).medium || (x.snippet.thumbnails || {}).default || {}).url || "",
+          views: +((x.statistics || {}).viewCount) || 0, likes: +((x.statistics || {}).likeCount) || 0, comments: +((x.statistics || {}).commentCount) || 0 }));
+      }
+    }
+    setLabel("Leyendo retención de los últimos 28 días");
+    let analyticsErr = "";
+    try {
+      const end = ytDay(new Date(Date.now() - 86400000)), start = ytDay(new Date(Date.now() - 28 * 86400000));
+      const a = await ytGet("https://youtubeanalytics.googleapis.com/v2/reports?ids=channel==MINE&startDate=" + start + "&endDate=" + end + "&metrics=views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained&dimensions=video&sort=-views&maxResults=25", signal);
+      const cols = (a.columnHeaders || []).map(h => h.name);
+      (a.rows || []).forEach(row => { const o = {}; cols.forEach((n, i) => { o[n] = row[i]; }); const v = vids.find(x => x.id === o.video); if (v) Object.assign(v, { views28: o.views, ret: o.averageViewPercentage, avgDur: o.averageViewDuration, subs28: o.subscribersGained }); });
+    } catch (e) { analyticsErr = e.message; }
+    const st = chan();
+    st.yt = { id: c.id, title: c.snippet.title, thumb: ((c.snippet.thumbnails || {}).default || {}).url || "",
+      subs: +c.statistics.subscriberCount || 0, hiddenSubs: !!c.statistics.hiddenSubscriberCount, views: +c.statistics.viewCount || 0, videos: +c.statistics.videoCount || 0,
+      list: vids, at: Date.now(), analyticsErr };
+    // Vincula solo los videos de la app cuyo título coincide exacto con uno publicado.
+    let linked = 0;
+    projects().forEach(q => { if (q.ytId || !(q.title || "").trim()) return; const m = vids.find(v => norm(v.title).trim() === norm(q.title).trim()); if (m) { q.ytId = m.id; q.stage = "publicado"; q.publishDate = q.publishDate || m.publishedAt.slice(0, 10); save(q.id); linked++; } });
+    save("settings");
+    toast("Canal conectado" + (linked ? " · " + linked + " video(s) vinculados" : ""));
+  });
+}
+async function ytResults(p) {
+  const v = ((chan().yt || {}).list || []).find(x => x.id === p.ytId);
+  if (!v) { toast("Elige el video de YouTube primero."); return; }
+  await runBusy("ytres", "Trayendo resultados", async signal => {
+    const pub = new Date(v.publishedAt); const start = ytDay(pub);
+    const seventh = new Date(pub.getFullYear(), pub.getMonth(), pub.getDate() + 6), yesterday = new Date(Date.now() - 86400000);
+    const endD = seventh < yesterday ? seventh : yesterday;
+    if (endD < new Date(pub.getFullYear(), pub.getMonth(), pub.getDate())) { toast("YouTube aún no tiene estadísticas de este video. Prueba mañana."); return; }
+    const a = await ytGet("https://youtubeanalytics.googleapis.com/v2/reports?ids=channel==MINE&startDate=" + start + "&endDate=" + ytDay(endD) + "&metrics=views,averageViewPercentage,averageViewDuration&filters=video==" + encodeURIComponent(v.id), signal);
+    const cols = (a.columnHeaders || []).map(h => h.name), row = (a.rows || [])[0] || [];
+    const o = {}; cols.forEach((n, i) => { o[n] = row[i]; });
+    p.results = p.results || {};
+    p.results.views7 = String(o.views || 0);
+    if (o.averageViewPercentage != null) p.results.retention = String(Math.round(o.averageViewPercentage * 10) / 10);
+    p.results.ytAt = Date.now(); p.results.partial = seventh >= yesterday;
+    touch(p); save(p.id);
+    toast(p.results.partial ? "Resultados hasta ayer (aún no cumple 7 días)" : "Resultados de los primeros 7 días listos");
+  });
+}
+function ytCard() {
+  const st = settings(), yt = chan().yt;
+  if (!st.googleClientId) return '<div class="card"><h3>Conectar con YouTube</h3><p class="hint">Trae tus suscriptores, vistas y retención por video sin anotarlos a mano. Necesitas crear un permiso gratis en Google Cloud y pegar el Client ID en Ajustes.</p><button class="btn" data-act="settings">' + ic("gear") + "Ir a Ajustes</button></div>";
+  if (!yt) return '<div class="card"><h3>Conectar con YouTube</h3><p class="hint">Se abrirá Google para que elijas la cuenta de tu canal. La app solo lee datos: no puede subir, borrar ni cambiar nada.</p><button class="btn primary" data-act="ytSync"' + (S.busy.yt ? " disabled" : "") + ">" + ic("video") + "Conectar mi canal</button>" + busyUI("yt") + "</div>";
+  const n = x => Number(x || 0).toLocaleString("es-CL");
+  const withRet = yt.list.filter(v => v.ret != null);
+  const avgRet = withRet.length ? Math.round(withRet.reduce((s2, v) => s2 + v.ret, 0) / withRet.length) : null;
+  const bestRet = withRet.slice().sort((a, b) => b.ret - a.ret)[0];
+  const linkedIds = new Set(projects().map(q => q.ytId).filter(Boolean));
+  return '<div class="card"><div class="lbl-row"><h3>' + esc(yt.title) + '</h3><span class="mono muted">' + rel(yt.at) + "</span></div>" +
+    '<div class="stat-grid"><div class="stat"><b>' + (yt.hiddenSubs ? "–" : n(yt.subs)) + '</b><span>Suscriptores</span></div><div class="stat"><b>' + n(yt.views) + '</b><span>Vistas totales</span></div><div class="stat"><b>' + (avgRet == null ? "–" : avgRet + "%") + "</b><span>Retención 28 días</span></div></div>" +
+    (bestRet ? '<p class="hint">Mejor retención: <b>' + esc(bestRet.title) + "</b> (" + Math.round(bestRet.ret) + "%). Mira qué hiciste distinto en ese gancho.</p>" : "") +
+    (yt.analyticsErr ? '<p class="hint" style="color:var(--warn)">Retención no disponible: ' + esc(yt.analyticsErr) + "</p>" : "") +
+    (yt.list.length ? '<div class="stack" style="gap:8px">' + yt.list.slice(0, 12).map(v => '<a class="ytv" href="https://studio.youtube.com/video/' + esc(v.id) + '/analytics" target="_blank" rel="noopener">' + (v.thumb ? '<img src="' + esc(v.thumb) + '" alt="" loading="lazy">' : '<span class="ytv-ph"></span>') +
+      '<span class="ytv-t"><b>' + esc(v.title) + "</b><span>" + n(v.views) + " vistas" + (v.ret != null ? " · " + Math.round(v.ret) + "% retención" : "") + " · " + fmtDate(v.publishedAt.slice(0, 10)) + (linkedIds.has(v.id) ? " · en la app" : "") + "</span></span></a>").join("") + "</div>" : '<p class="hint">Aún no hay videos públicos en el canal.</p>') +
+    '<div class="actions"><button class="btn" data-act="ytSync"' + (S.busy.yt ? " disabled" : "") + ">" + ic("undo") + 'Actualizar</button></div>' + busyUI("yt") +
+    '<p class="hint">El CTR de la miniatura no está disponible para apps externas: míralo en YouTube Studio. Las estadísticas de YouTube llegan con 1 a 2 días de atraso.</p></div>';
+}
 
 /* ---------- tema claro u oscuro ---------- */
 function applyTheme(v) {
