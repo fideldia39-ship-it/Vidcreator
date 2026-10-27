@@ -274,6 +274,45 @@ mark{background:color-mix(in srgb,var(--warn) 30%,transparent);color:var(--fg);b
 .skel{height:76px;border-radius:var(--r);background:var(--surface);margin-bottom:10px}
 .kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
 .kv:first-child{border-top:0}
+
+/* tablero, calendario, canal */
+.row{display:flex;gap:8px;min-width:0}
+.row input{flex:1;min-width:0}
+.scrollx{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.scrollx::-webkit-scrollbar{display:none}
+.scrollx .chipbtn{flex:none}
+.chipbtn .mono{color:var(--muted);margin-left:2px}
+input[type=date]{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:16px;min-height:48px}
+.st-idea{--sc:var(--muted)}.st-guion{--sc:var(--blue)}.st-grabado{--sc:var(--violet)}.st-editado{--sc:var(--warn)}.st-publicado{--sc:var(--ok)}
+.stchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--sc) 16%,transparent);color:var(--sc);white-space:nowrap}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal-h{font-size:11px;color:var(--muted);text-align:center;font-weight:700;letter-spacing:.04em;padding-bottom:2px}
+.cal-d{aspect-ratio:1;border-radius:10px;border:1px solid transparent;background:var(--surface);display:grid;justify-items:center;align-content:center;gap:3px;padding:2px;font-size:14px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.cal-d.today{border-color:var(--accent)}
+.cal-d.sel{background:var(--fg);color:var(--bg)}
+.cal-dots{display:flex;gap:2px;height:6px}
+.cal-dots i{width:6px;height:6px;border-radius:50%;background:var(--sc)}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cal-nav h3{font-size:16px;text-transform:capitalize}
+.stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{padding:12px 10px;border-radius:12px;background:var(--surface-2);text-align:center}
+.stat b{display:block;font-family:var(--f-display);font-size:24px;line-height:1.1}
+.stat span{font-size:12px;color:var(--muted)}
+.hbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:14px;align-items:center}
+.hbar .meter{grid-column:1/-1}
+.fields3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.fields3 input{padding:10px}
+.shot{display:flex;gap:10px;align-items:flex-start;font-size:14px;padding:6px 0}
+.shot span{flex:1;min-width:0}
+.shot .x{border:0;background:transparent;color:var(--muted);padding:2px 4px}
+.shot.done span{color:var(--muted);text-decoration:line-through}
+/* borrador */
+.pv-stage{position:relative;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden;max-width:100%}
+.pv-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:kb 7s ease-out both}
+@keyframes kb{from{transform:scale(1)}to{transform:scale(1.12)}}
+@media (prefers-reduced-motion:reduce){.pv-stage img{animation:none}}
+.pv-blank{position:absolute;inset:0;background:linear-gradient(135deg,#0a1626,#103a3a)}
+.pv-cap{position:absolute;left:6%;right:6%;bottom:7%;text-align:center;color:#fff;font-weight:800;font-size:clamp(14px,4.2vw,22px);line-height:1.3;text-shadow:0 2px 6px rgba(0,0,0,.95);white-space:pre-line}
 </style>
 </head>
 <body>
@@ -349,7 +388,7 @@ const S = {
   media: {}, takes: {}, imgCache: {}, suggest: {}, busy: {}, sheet: null, ed: null, au: null, rec: null,
   status: undefined, voices: null, voiceMode: "mia", ttsPart: "all", installEvt: null
 };
-const TABS = [["guion", "Guión"], ["voz", "Voz"], ["media", "Fotos y videos"], ["mini", "Miniatura"], ["titulos", "Títulos"], ["orig", "Originalidad"], ["publicar", "Publicar"]];
+const TABS = [["guion", "Guión"], ["voz", "Voz"], ["media", "Fotos y tomas"], ["mini", "Miniatura"], ["titulos", "Títulos"], ["shorts", "Shorts"], ["orig", "Originalidad"], ["publicar", "Publicar"]];
 const cur = () => (S.pid && S.docs[S.pid] && S.docs[S.pid].kind === "project") ? Object.assign(S.docs[S.pid], { id: S.pid }) : null;
 const projects = () => Object.keys(S.docs).filter(id => S.docs[id].kind === "project").map(id => Object.assign(S.docs[id], { id })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 const settings = () => S.docs.settings || (S.docs.settings = { kind: "settings" });
@@ -653,6 +692,130 @@ function analyze(p) {
 }
 const LVL = { ok: "Suena a ti", warn: "Revisar", bad: "Muy genérico", none: "Sin revisar" };
 
+/* ---------- etapas y fechas ---------- */
+const STAGES = [["idea", "Idea"], ["guion", "Guión"], ["grabado", "Grabado"], ["editado", "Editado"], ["publicado", "Publicado"]];
+const STAGE_I = { idea: 0, guion: 1, grabado: 2, editado: 3, publicado: 4 };
+const STAGE_L = Object.fromEntries(STAGES);
+const stageOf = p => p.stage || ((p.takes || []).length ? "grabado" : (p.script || "").trim().length > 40 ? "guion" : "idea");
+function bumpStage(p, to) { const now = stageOf(p); p.stage = STAGE_I[now] < STAGE_I[to] ? to : now; }
+const isoOf = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const todayISO = () => isoOf(new Date());
+function weekRange() { const d = new Date(); const k = (d.getDay() + 6) % 7; const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - k); return [isoOf(mon), isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6))]; }
+const MES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const fmtDate = iso => { if (!iso) return ""; const [, m, d] = iso.split("-").map(Number); return d + " " + MES[m - 1].slice(0, 3); };
+const num = v => { const n = Number(String(v == null ? "" : v).replace(/\./g, "").replace(",", ".")); return isFinite(n) && String(v).trim() !== "" ? n : null; };
+const pct = v => { const n = Number(String(v == null ? "" : v).replace(",", ".").replace("%", "")); return isFinite(n) && String(v).trim() !== "" ? n : null; };
+
+/* ---------- plantillas de guión guiadas ---------- */
+const FORMATS = {
+  historia: { name: "Historia personal", desc: "Algo que te pasó y lo que aprendiste.", q: [
+    ["gancho", "El momento más fuerte de la historia (el video parte ahí)"], ["contexto", "¿Dónde estabas y qué querías lograr?"],
+    ["problema", "¿Qué salió mal o qué obstáculo apareció?"], ["dato", "Un número o detalle concreto: monto, días, resultado"],
+    ["giro", "¿Qué hiciste distinto?"], ["leccion", "¿Qué aprendiste que le sirve a quien te ve?"], ["cta", "¿Qué le pides que comente o haga?"]],
+    map: { GANCHO: ["gancho"], INTRO: ["contexto"], DESARROLLO: ["problema", "dato", "giro"], CIERRE: ["leccion", "cta"] } },
+  tutorial: { name: "Tutorial paso a paso", desc: "Enseñas algo que tú ya hiciste.", q: [
+    ["gancho", "¿Qué va a lograr quien vea el video?"], ["porque", "¿Por qué tú sabes hacerlo? Tu experiencia en una o dos frases"],
+    ["pasos", "Los pasos, uno por línea"], ["error", "Un error común que cometiste o que ves seguido"],
+    ["resultado", "¿Qué resultado obtuviste tú?"], ["cta", "¿Qué le pides que comente o haga?"]],
+    map: { GANCHO: ["gancho"], INTRO: ["porque"], DESARROLLO: ["pasos*", "error", "resultado"], CIERRE: ["cta"] } },
+  lista: { name: "Lista", desc: "X cosas que probaste, usas o cambiaste.", q: [
+    ["gancho", "¿Qué promete la lista? Ej: 5 gastos que eliminé este año"], ["intro", "¿Por qué hiciste esta lista? Qué te pasó"],
+    ["items", "Cada punto en una línea, con tu experiencia en cada uno"], ["favorito", "¿Cuál te funcionó más y por qué?"], ["cta", "¿Qué le pides que comente o haga?"]],
+    map: { GANCHO: ["gancho"], INTRO: ["intro"], DESARROLLO: ["items*", "favorito"], CIERRE: ["cta"] } },
+  error: { name: "Error que cometí", desc: "Un error tuyo y cómo evitarlo.", q: [
+    ["gancho", "El error, dicho en una frase"], ["costo", "¿Cuánto te costó? Dinero, tiempo, oportunidades"],
+    ["porque", "¿Por qué lo cometiste?"], ["senal", "¿Qué señal ignoraste?"], ["hoy", "¿Qué haces hoy distinto?"], ["cta", "¿Qué le pides que comente o haga?"]],
+    map: { GANCHO: ["gancho"], INTRO: ["costo"], DESARROLLO: ["porque", "senal", "hoy"], CIERRE: ["cta"] } },
+  comparacion: { name: "Comparación", desc: "Dos opciones que probaste, frente a frente.", q: [
+    ["gancho", "¿Qué comparas y para quién es útil?"], ["a", "Opción A: lo bueno y lo malo según tu experiencia"],
+    ["b", "Opción B: lo bueno y lo malo según tu experiencia"], ["dato", "Los números que las comparan"],
+    ["veredicto", "¿Cuál elegiste tú y por qué?"], ["cta", "¿Qué le pides que comente o haga?"]],
+    map: { GANCHO: ["gancho"], DESARROLLO: ["a", "b", "dato"], CIERRE: ["veredicto", "cta"] } }
+};
+function buildScript(fmt, ans) {
+  const F = FORMATS[fmt]; if (!F) return "";
+  const out = [];
+  for (const [sec, keys] of Object.entries(F.map)) {
+    const parts = keys.map(k => {
+      const isList = k.endsWith("*"); const v = String(ans[k.replace("*", "")] || "").trim();
+      if (!v) return "";
+      return isList ? v.split(/\n+/).map(s => s.trim()).filter(Boolean).map((s, i) => (i + 1) + ". " + s.replace(/^\d+[.)]\s*/, "")).join("\n") : v;
+    }).filter(Boolean);
+    if (parts.length) out.push("[" + sec + "]\n" + parts.join("\n\n"));
+  }
+  return out.join("\n\n");
+}
+
+/* ---------- subtítulos (.srt) a partir del guión y la narración ---------- */
+function cueChunks(text) {
+  const sents = String(text || "").replace(/\s+/g, " ").match(/[^.!?]+[.!?]*/g) || [];
+  const out = [];
+  for (let s of sents) {
+    s = s.trim();
+    while (s.length > 84) {
+      let cut = s.lastIndexOf(",", 84); if (cut < 30) cut = s.lastIndexOf(" ", 84); if (cut < 20) cut = 84;
+      out.push(s.slice(0, cut + 1).trim()); s = s.slice(cut + 1).trim();
+    }
+    if (s) out.push(s);
+  }
+  return out;
+}
+function speechBounds(x) {
+  const rms = AU.frameRms(x, Math.round(x.sr * 0.02)), th = Math.max(0.006, AU.floor(rms) * 2.2);
+  let a = 0, b = rms.length - 1;
+  while (a < b && rms[a] < th) a++;
+  while (b > a && rms[b] < th) b--;
+  const pauses = []; let f = a;
+  while (f <= b) { if (rms[f] < th) { let g = f; while (g <= b && rms[g] < th) g++; if (g - f >= 10) pauses.push((f + g) / 2 * 0.02); f = g; } else f++; }
+  return { start: a * 0.02, end: (b + 1) * 0.02, pauses };
+}
+// Reparte las frases en el tiempo según su largo y las ajusta a las pausas reales de la voz.
+function makeCues(text, x) {
+  const chunks = cueChunks(text); if (!chunks.length) return [];
+  const { start, end, pauses } = speechBounds(x);
+  const total = chunks.reduce((s, c) => s + c.length, 0), span = Math.max(0.5, end - start);
+  const bounds = [start]; let acc = 0;
+  for (let i = 0; i < chunks.length - 1; i++) {
+    acc += chunks[i].length; let t = start + span * acc / total;
+    let best = null; for (const q of pauses) if (Math.abs(q - t) < 0.7 && (best == null || Math.abs(q - t) < Math.abs(best - t))) best = q;
+    if (best != null) t = best;
+    bounds.push(Math.max(t, bounds[bounds.length - 1] + 0.3));
+  }
+  bounds.push(Math.max(end, bounds[bounds.length - 1] + 0.3));
+  return chunks.map((c, i) => ({ a: bounds[i], b: bounds[i + 1], text: c }));
+}
+function wrap2(t) {
+  if (t.length <= 42) return t;
+  const half = Math.floor(t.length / 2); let k = t.lastIndexOf(" ", half + 6); if (k < 10) k = t.indexOf(" ", half);
+  return k > 0 ? t.slice(0, k) + "\n" + t.slice(k + 1) : t;
+}
+const srtTime = s => { const ms = Math.max(0, Math.round(s * 1000)); return [Math.floor(ms / 3600000), Math.floor(ms % 3600000 / 60000), Math.floor(ms % 60000 / 1000)].map(v => String(v).padStart(2, "0")).join(":") + "," + String(ms % 1000).padStart(3, "0"); };
+const toSRT = cues => cues.map((c, i) => (i + 1) + "\n" + srtTime(c.a) + " --> " + srtTime(c.b) + "\n" + wrap2(c.text)).join("\n\n") + "\n";
+function sectionText(script, name) { const s = sections(script || "").find(x => x.name === name); return s ? cleanSpeech(s.text) : ""; }
+function speechText(p, t) {
+  if (t && t.text) return t.text;
+  if (t && t.part && t.part !== "all") return sectionText(p.script, t.part);
+  return cleanSpeech(p.script);
+}
+
+/* ---------- prompts nuevos ---------- */
+function promptIdeasCanal(niche, existing) {
+  return "Propón 8 ideas de videos de YouTube en español para un canal sobre: " + niche + ".\n" +
+    "Cada idea debe poder contarse desde la experiencia propia del creador, con un ángulo específico y no genérico. Evita temas que ya están en miles de videos sin un giro personal.\n" +
+    (existing ? "Ya tiene estas ideas, no las repitas: " + existing + "\n" : "") +
+    'Formato: JSON array [{"titulo": "título provisional", "angulo": "qué lo hace distinto, máximo 15 palabras", "formato": "historia|tutorial|lista|error|comparacion"}]';
+}
+function promptShots(p) {
+  return "Eres productor de videos de YouTube. A partir de este guión, haz una lista de tomas que el creador pueda grabar él mismo con su teléfono para cubrir la narración. Prioriza material propio y real: su pantalla, sus manos, su escritorio, documentos con datos tapados, lugares y objetos. Nada de stock ni imágenes generadas.\n\n" +
+    ctx(p) + "\n\nGuión:\n\"\"\"\n" + (p.script || "").slice(0, 8000) + "\n\"\"\"\n\n" +
+    'Formato: JSON array de 6 a 12 tomas [{"seccion": "GANCHO|INTRO|DESARROLLO|CIERRE", "toma": "qué grabar, concreto, máximo 14 palabras", "tipo": "pantalla|manos|cara|lugar|objeto|documento"}]';
+}
+function promptShorts(p) {
+  return "Convierte este guión de YouTube en 3 Shorts verticales en español. Cada Short dura 30 a 50 segundos (máximo 110 palabras), se entiende sin ver el video largo, abre con un gancho fuerte en la primera frase y usa solo ideas, datos y experiencias que ya están en el guión: no inventes nada. Cierra invitando a ver el video completo o a comentar.\n\n" +
+    ctx(p) + "\n\nGuión:\n\"\"\"\n" + (p.script || "").slice(0, 10000) + "\n\"\"\"\n\n" +
+    'Formato: JSON array [{"titulo": "máximo 60 caracteres", "guion": "texto del Short", "texto_miniatura": "máximo 3 palabras"}]';
+}
+
 /* ---------- prompts ---------- */
 const ctx = p => "Tema: " + (p.topic || p.name || "(sin tema)") + "\nNarración: " + (p.voice === "ia" ? "voz IA" : "voz propia del creador");
 function promptFix(p) {
@@ -846,12 +1009,13 @@ function drawWave() {
 }
 
 /* tomas (grabaciones y voces IA) */
-async function addTake(p, blob, kind, name, dur) {
+async function addTake(p, blob, kind, name, dur, extra) {
   const id = uid();
   await DB.put("blobs", id, blob);
   S.takes[id] = { blob, url: URL.createObjectURL(blob) };
   p.takes = p.takes || [];
-  p.takes.unshift({ id, name: name || "Toma", kind, dur: dur || null, createdAt: Date.now() });
+  p.takes.unshift(Object.assign({ id, name: name || "Toma", kind, dur: dur || null, createdAt: Date.now() }, extra || {}));
+  bumpStage(p, "grabado");
   touch(p); save(p.id);
   if (!dur) decodeBlob(blob).then(x => { const t = p.takes.find(t => t.id === id); if (t) { t.dur = AU.dur(x); save(p.id); if (S.tab === "voz" && !S.sheet) render(); } }).catch(() => {});
   return id;
@@ -947,7 +1111,7 @@ async function recFinish() {
   if (!r || r.discard || !p || !r.chunks.length) { S.rec = null; S.sheet = null; renderSheet(); return; }
   const blob = new Blob(r.chunks, { type: r.mime });
   S.rec = null; S.sheet = null; renderSheet();
-  const id = await addTake(p, blob, "grabacion", takeName(p, "grabacion"), r.acc);
+  const id = await addTake(p, blob, "grabacion", r.label || takeName(p, "grabacion"), r.acc, r.text ? { text: r.text } : null);
   toast("Toma guardada. Ábrela para editarla.");
   render();
   openEditor(id);
@@ -963,6 +1127,33 @@ async function openEditor(takeId) {
     S.sheet = { type: "audio" }; renderSheet();
   } catch (e) { toast("No se pudo abrir este audio."); }
 }
+/* borrador del video: narración + fotos + subtítulos */
+async function openPreview(takeId) {
+  const p = cur(); const takes = (p.takes || []).filter(t => S.takes[t.id]);
+  if (!takes.length) { toast("Primero graba o genera una narración."); return; }
+  const t = takes.find(x => x.id === takeId) || takes.find(x => x.kind === "editada") || takes[0];
+  stopPreview();
+  const blobs = S.media[p.id] || {};
+  const imgs = (p.media || []).map(m => m.kind === "image" && blobs[m.id] ? blobs[m.id].url : m.thumb || null).filter(Boolean);
+  let cues = [];
+  try { cues = makeCues(speechText(p, t), await decodeBlob(S.takes[t.id].blob)); } catch (e) {}
+  const audio = new Audio(S.takes[t.id].url);
+  S.pv = { takeId: t.id, imgs, cues, audio, idx: -1 };
+  audio.ontimeupdate = pvTick;
+  audio.onplay = audio.onpause = audio.onended = () => { if (S.sheet && S.sheet.type === "preview") { const b = document.querySelector('[data-act="pvPlay"]'); if (b) b.innerHTML = ic(audio.paused ? "play" : "pause") + (audio.paused ? "Reproducir" : "Pausa"); } };
+  S.sheet = { type: "preview" }; renderSheet(); pvTick();
+}
+function pvTick() {
+  const pv = S.pv; if (!pv) return;
+  const a = pv.audio, t = a.currentTime || 0, d = a.duration || 1;
+  const bar = $("#pvBar"); if (bar) bar.style.width = Math.min(100, t / d * 100) + "%";
+  if (pv.imgs.length) {
+    const i = Math.min(pv.imgs.length - 1, Math.floor(t / d * pv.imgs.length));
+    if (i !== pv.idx) { pv.idx = i; const im = $("#pvImg"); if (im) { im.src = pv.imgs[i]; im.style.animation = "none"; void im.offsetWidth; im.style.animation = ""; } }
+  }
+  const c = pv.cues.find(q => t >= q.a && t < q.b); const cap = $("#pvCap"); if (cap) cap.textContent = c ? wrap2(c.text) : "";
+}
+function stopPreview() { if (S.pv && S.pv.audio) S.pv.audio.pause(); S.pv = null; }
 function auApply(fn, msg) {
   const st = S.au; if (!st) return;
   Player.stop();
@@ -996,7 +1187,7 @@ async function genTTS(p) {
     }
     const x = AU.concat(parts.map(q => AU.toRate(q, parts[0].sr)), 0.2);
     const label = (st.voiceName || "Voz IA") + (S.ttsPart === "all" ? "" : " · " + S.ttsPart.toLowerCase());
-    await addTake(p, AU.wav(x), "ia", label, AU.dur(x));
+    await addTake(p, AU.wav(x), "ia", label, AU.dur(x), { part: S.ttsPart });
     if (p.voice !== "ia") { p.voice = "ia"; save(p.id); toast("Narración marcada como Voz IA para la alerta de originalidad."); }
     else toast("Voz generada");
   });
@@ -1041,22 +1232,111 @@ function render() {
   if (!S.sheet || S.sheet.type !== "rec") renderSheet();
 }
 
+function pcard(p) {
+  const a = analyze(p); const steps = stepsOf(p, a); const st = stageOf(p);
+  return '<button class="pcard" data-act="open" data-id="' + p.id + '">' +
+    '<div class="pc-top"><span class="pc-name">' + esc(p.name || "Video sin título") + "</span>" + (p.example ? '<span class="chip">Ejemplo</span>' : "") + "</div>" +
+    '<div class="pc-meta">' + (a.wc ? a.wc + " palabras · ≈" + Math.max(1, Math.round(a.wc / 150)) + " min · " : "") + "editado " + rel(p.updatedAt) + "</div>" +
+    '<div class="pc-foot"><span class="stchip st-' + st + '">' + STAGE_L[st] + "</span>" + (p.publishDate ? '<span class="chip">' + fmtDate(p.publishDate) + "</span>" : "") +
+    (a.level !== "none" ? '<span class="lvl lvl-' + a.level + '">' + LVL[a.level] + " · " + a.score + "</span>" : "") +
+    '<span class="chip">' + steps.done + "/" + steps.total + "</span></div></button>";
+}
+
 function viewHome() {
-  const list = projects();
-  const cards = list.map(p => {
-    const a = analyze(p); const steps = stepsOf(p, a);
-    return '<button class="pcard" data-act="open" data-id="' + p.id + '">' +
-      '<div class="pc-top"><span class="pc-name">' + esc(p.name || "Video sin título") + "</span>" + (p.example ? '<span class="chip">Ejemplo</span>' : "") + "</div>" +
-      '<div class="pc-meta">' + (a.wc ? a.wc + " palabras · ≈" + Math.max(1, Math.round(a.wc / 150)) + " min · " : "Sin guión · ") + "editado " + rel(p.updatedAt) + "</div>" +
-      '<div class="pc-foot"><span class="lvl lvl-' + a.level + '">' + LVL[a.level] + (a.score != null ? " · " + a.score : "") + '</span><span class="chip">' + steps.done + "/" + steps.total + " pasos</span></div></button>";
-  }).join("");
+  const list = projects(); const st = settings();
+  const [w0, w1] = weekRange(); const goal = st.weeklyGoal || 2;
+  const done = list.filter(p => stageOf(p) === "publicado" && p.publishDate && p.publishDate >= w0 && p.publishDate <= w1).length;
+  const next = list.filter(p => p.publishDate && p.publishDate >= todayISO() && stageOf(p) !== "publicado").sort((a, b) => a.publishDate < b.publishDate ? -1 : 1)[0];
+  const hv = S.homeView || "tablero";
+  const seg = '<div class="seg" style="width:100%">' + [["tablero", "Videos"], ["calendario", "Calendario"], ["canal", "Mi canal"]].map(([k, l]) => '<button style="flex:1" data-act="homeView" data-v="' + k + '" class="' + (hv === k ? "on" : "") + '">' + l + "</button>").join("") + "</div>";
+  const body = hv === "calendario" ? homeCal(list) : hv === "canal" ? homeCanal(list) : homeBoard(list);
   return '<header class="top"><div class="brand">' + LOGO + "Vid<b>Creator</b></div>" + '<span class="sync" id="sync">' + syncLabel() + '</span><button class="icon" data-act="settings" aria-label="Ajustes">' + ic("gear") + "</button></header>" +
     (S.installEvt ? '<div class="install"><p>Instala VidCreator en tu teléfono para abrirla como una app.</p><button class="btn sm primary" data-act="install">Instalar</button></div>' : "") +
-    '<section class="hello"><h1>Tú escribes.<br><span>La IA lo pule.</span></h1>' +
-    "<p>Corrige tu guión, graba y limpia tu voz, prepara fotos, miniatura y título, y recibe un aviso cuando un video suene genérico antes de subirlo.</p>" +
-    '<button class="btn primary big" data-act="new">' + ic("plus") + "Nuevo video</button></section>" +
-    '<section><div class="sec-h"><h2>Tus videos</h2><span class="mono muted">' + list.length + "</span></div>" +
-    (list.length ? '<div class="plist">' + cards + "</div>" : '<div class="empty"><p>Todavía no tienes videos. Crea uno y pega tu guión.</p></div>') + "</section>" +
+    '<section class="stack">' +
+    '<div class="card"><div class="lbl-row"><span>Meta de la semana</span><span class="mono">' + done + " / " + goal + " publicados</span></div>" +
+    '<div class="meter"><i style="width:' + Math.min(100, done / goal * 100) + '%;background:var(--accent)"></i></div>' +
+    '<p class="hint">' + (next ? "Próximo: <b>" + esc(next.name) + "</b> · " + fmtDate(next.publishDate) + " · " + STAGE_L[stageOf(next)] : "Ponle fecha a tus videos en el calendario para planificar la semana.") + "</p></div>" +
+    '<button class="btn primary big" data-act="new">' + ic("plus") + "Nuevo video</button>" + seg + body + "</section>";
+}
+
+function homeBoard(list) {
+  const f = S.stageFilter || "todos"; const st = settings();
+  const counts = {}; list.forEach(p => { const s = stageOf(p); counts[s] = (counts[s] || 0) + 1; });
+  const chips = [["todos", "Todos", list.length]].concat(STAGES.map(([k, l]) => [k, l, counts[k] || 0]))
+    .map(([k, l, n]) => '<button class="chipbtn' + (f === k ? " on" : "") + '" data-act="stageFilter" data-v="' + k + '">' + l + ' <span class="mono">' + n + "</span></button>").join("");
+  const shown = f === "todos" ? list : list.filter(p => stageOf(p) === f);
+  const sug = S.ideaSug || [];
+  return '<div class="card"><h3>Banco de ideas</h3>' +
+    '<div class="row"><input type="text" id="f-idea" placeholder="Anota una idea de video" enterkeyhint="done"><button class="btn primary" data-act="addIdea">Agregar</button></div>' +
+    '<label class="field"><span>Tema de tu canal</span><input type="text" id="f-niche" data-setting="niche" value="' + esc(st.niche || "") + '" placeholder="Ej: finanzas personales y ahorro"></label>' +
+    '<button class="btn" data-act="suggestIdeas"' + (S.busy.ideasCanal ? " disabled" : "") + ">" + ic("wand") + "Sugerir ideas con IA</button>" + busyUI("ideasCanal") +
+    (sug.length ? '<div class="stack" style="gap:8px">' + sug.map((x, i) => '<div class="idea" style="grid-template-columns:minmax(0,1fr) auto;align-items:center"><span style="color:var(--fg)"><b style="font-family:var(--f-body);text-transform:none;font-size:15px">' + esc(x.titulo) + "</b><br>" + esc(x.angulo) + " · " + esc((FORMATS[x.formato] || {}).name || "Libre") + '</span><button class="btn sm" data-act="addSug" data-i="' + i + '">' + (x.added ? ic("check") + "Agregada" : "Agregar") + "</button></div>").join("") + "</div>" : "") +
+    "</div>" +
+    '<div class="chips scrollx">' + chips + "</div>" +
+    (shown.length ? '<div class="plist">' + shown.map(pcard).join("") + "</div>" : '<div class="empty"><p>' + (f === "todos" ? "Todavía no tienes videos. Anota una idea o crea un video nuevo." : "No hay videos en esta etapa.") + "</p></div>");
+}
+
+function homeCal(list) {
+  const base = S.calMonth || (S.calMonth = todayISO().slice(0, 7));
+  const [y, m] = base.split("-").map(Number);
+  const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7, days = new Date(y, m, 0).getDate();
+  const byDay = {}; list.forEach(p => { if (p.publishDate && p.publishDate.startsWith(base)) (byDay[p.publishDate] = byDay[p.publishDate] || []).push(p); });
+  const sel = S.calDay || todayISO(), today = todayISO();
+  let cells = ["L", "M", "M", "J", "V", "S", "D"].map(d => '<div class="cal-h">' + d + "</div>").join("");
+  for (let i = 0; i < lead; i++) cells += "<div></div>";
+  for (let d = 1; d <= days; d++) {
+    const iso = base + "-" + String(d).padStart(2, "0"); const vids = byDay[iso] || [];
+    cells += '<button class="cal-d' + (iso === today ? " today" : "") + (iso === sel ? " sel" : "") + '" data-act="calDay" data-v="' + iso + '">' + d +
+      '<span class="cal-dots">' + vids.slice(0, 3).map(p => '<i class="st-' + stageOf(p) + '"></i>').join("") + "</span></button>";
+  }
+  const dayVids = list.filter(p => p.publishDate === sel);
+  const free = list.filter(p => !p.publishDate && stageOf(p) !== "publicado");
+  return '<div class="card"><div class="cal-nav"><button class="icon" data-act="calNav" data-d="-1" aria-label="Mes anterior">' + ic("back") + "</button><h3>" + MES[m - 1] + " " + y + '</h3><button class="icon" data-act="calNav" data-d="1" aria-label="Mes siguiente" style="transform:scaleX(-1)">' + ic("back") + "</button></div>" +
+    '<div class="cal">' + cells + "</div>" +
+    '<div class="legend-row">' + STAGES.map(([k, l]) => '<span class="st-' + k + '"><i style="background:var(--sc);border-radius:50%"></i>' + l + "</span>").join("") + "</div></div>" +
+    '<div class="sec-h"><h2>' + fmtDate(sel) + "</h2><span class=\"mono muted\">" + dayVids.length + "</span></div>" +
+    (dayVids.length ? '<div class="plist">' + dayVids.map(pcard).join("") + "</div>" : '<p class="hint">Nada programado este día.</p>') +
+    (free.length ? '<div class="card"><h3>Sin fecha</h3>' + free.map(p => '<div class="row" style="align-items:center"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.name) + '</span><button class="btn sm" data-act="schedule" data-id="' + p.id + '" data-day="' + sel + '">Programar el ' + fmtDate(sel) + "</button></div>").join("") + "</div>" : "");
+}
+
+function homeCanal(list) {
+  const st = settings(); const real = list.filter(p => !p.example);
+  const an = real.map(p => ({ p, a: analyze(p) })).filter(x => x.a.level !== "none");
+  const avg = an.length ? Math.round(an.reduce((s, x) => s + x.a.score, 0) / an.length) : null;
+  const red = an.filter(x => x.a.level === "bad");
+  const iaSens = an.filter(x => x.a.signals.some(s => s.key === "voz" && s.state === "bad"));
+  const iaCount = real.filter(p => p.voice === "ia").length;
+  const pairs = [];
+  const sh = real.filter(p => (p.script || "").length > 400).map(p => ({ p, s: shingles(p.script) }));
+  for (let i = 0; i < sh.length; i++) for (let j = i + 1; j < sh.length; j++) { const v = jacc(sh[i].s, sh[j].s); if (v >= 0.15) pairs.push([sh[i].p, sh[j].p, v]); }
+  pairs.sort((a, b) => b[2] - a[2]);
+  const pub = real.filter(p => stageOf(p) === "publicado");
+  const withRes = pub.filter(p => p.results && num(p.results.views7) != null);
+  const avgBy = keyFn => {
+    const g = {}; withRes.forEach(p => { const k = keyFn(p); (g[k] = g[k] || []).push(num(p.results.views7)); });
+    return Object.entries(g).map(([k, v]) => [k, Math.round(v.reduce((s, x) => s + x, 0) / v.length), v.length]).sort((a, b) => b[1] - a[1]);
+  };
+  const bars = rows => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.map(([k, v, n]) => '<div class="hbar"><span>' + esc(k) + ' <span class="muted">(' + n + ")</span></span><b class=\"mono\">" + v.toLocaleString("es-CL") + '</b><div class="meter"><i style="width:' + (v / max * 100) + '%;background:var(--accent)"></i></div></div>').join(""); };
+  const best = withRes.slice().sort((a, b) => num(b.results.views7) - num(a.results.views7))[0];
+  const hooks = st.hooks || [];
+  const scoreCol = avg == null ? "var(--muted)" : avg >= 70 ? "var(--ok)" : avg >= 45 ? "var(--warn)" : "var(--bad)";
+  return '<div class="card"><h3>Salud del canal</h3>' +
+    '<div class="stat-grid"><div class="stat"><b style="color:' + scoreCol + '">' + (avg == null ? "–" : avg) + '</b><span>Originalidad promedio</span></div><div class="stat"><b>' + red.length + '</b><span>Videos en rojo</span></div><div class="stat"><b>' + iaCount + "</b><span>Con voz IA</span></div></div>" +
+    (red.length ? '<p class="hint">Revisa antes de subir: ' + red.map(x => "<b>" + esc(x.p.name) + "</b>").join(", ") + ".</p>" : "") +
+    (iaSens.length ? '<p class="hint" style="color:var(--bad)">Voz IA en temas de finanzas o salud: ' + iaSens.map(x => esc(x.p.name)).join(", ") + ". YouTube no los monetiza; grábalos con tu voz.</p>" : "") +
+    (pairs.length ? '<div><b>Videos que se parecen demasiado</b><ul>' + pairs.slice(0, 4).map(([a, b, v]) => "<li>" + esc(a.name) + " y " + esc(b.name) + " · " + Math.round(v * 100) + "%</li>").join("") + "</ul></div>" : '<p class="hint">Ningún par de videos se parece demasiado. Así se ve un canal variado.</p>') +
+    '<p class="hint">YouTube revisa el canal completo. Muchos videos con la misma estructura o en rojo pueden afectar la monetización de todos.</p></div>' +
+    '<div class="card"><h3>Resultados</h3>' +
+    (withRes.length ? (best ? '<p>Mejor video: <b>' + esc(best.title || best.name) + "</b> · " + num(best.results.views7).toLocaleString("es-CL") + " vistas en 7 días</p>" : "") +
+      (withRes.length >= 2 ? "<div><b>Vistas promedio por formato</b></div>" + bars(avgBy(p => (FORMATS[p.format] || {}).name || "Libre")) +
+        "<div><b>Por tipo de narración</b></div>" + bars(avgBy(p => p.voice === "ia" ? "Voz IA" : "Tu voz")) : '<p class="hint">Con 2 o más videos con resultados verás qué formato funciona mejor.</p>')
+      : '<p class="hint">Cuando publiques, anota las vistas a los 7 días en la pestaña Publicar de cada video. Aquí verás qué formatos y temas te funcionan.</p>') + "</div>" +
+    '<div class="card"><h3>Biblioteca de ganchos</h3>' +
+    (hooks.length ? hooks.slice(0, 20).map(h => '<div class="flag"><span><span class="kchip ' + (h.kind === "gancho" ? "k-grabacion" : "k-editada") + '">' + (h.kind === "gancho" ? "Gancho" : "Cierre") + "</span> " + esc(h.text) + '</span><span class="hint">De: ' + esc(h.from) + '</span><div class="actions"><button class="btn sm" data-act="hookCopy" data-id="' + h.id + '">' + ic("copy") + 'Copiar</button><button class="btn sm ghost danger" data-act="hookDel" data-id="' + h.id + '">Quitar</button></div></div>').join("")
+      : '<p class="hint">Guarda tus mejores ganchos y cierres desde la pestaña Guión de cada video.</p>') +
+    '<p class="hint">Úsalos como referencia de estilo, no para copiarlos igual: repetir la misma frase en muchos videos hace que el canal parezca plantilla.</p></div>' +
+    '<div class="card"><h3>Meta semanal</h3><div class="chips">' + [1, 2, 3, 5, 7].map(n => '<button class="chipbtn' + ((st.weeklyGoal || 2) === n ? " on" : "") + '" data-act="goal" data-v="' + n + '">' + n + (n === 1 ? " video" : " videos") + "</button>").join("") + "</div>" +
+    '<p class="hint">Constancia antes que cantidad: 2 videos buenos por semana rinden más que 7 apurados.</p></div>' +
     '<section class="legend"><h3>El aviso de originalidad</h3><ul>' +
     '<li><span class="lvl lvl-ok">Suena a ti</span><span>Tiene tu experiencia, datos y material propio.</span></li>' +
     '<li><span class="lvl lvl-warn">Revisar</span><span>Hay partes de plantilla. Ajusta antes de subir.</span></li>' +
@@ -1098,7 +1378,7 @@ function banner(p, a) {
 function viewProject(p) {
   const a = analyze(p);
   const tabs = TABS.map(([k, l]) => '<button class="tab' + (S.tab === k ? " on" : "") + '" data-act="tab" data-t="' + k + '">' + (k === "orig" ? '<span class="dot ' + a.level + '"></span>' : "") + l + "</button>").join("");
-  const body = { guion: tabGuion, voz: tabVoz, media: tabMedia, mini: tabMini, titulos: tabTitulos, orig: tabOrig, publicar: tabPublicar }[S.tab](p, a);
+  const body = ({ guion: tabGuion, voz: tabVoz, media: tabMedia, mini: tabMini, titulos: tabTitulos, shorts: tabShorts, orig: tabOrig, publicar: tabPublicar }[S.tab] || tabGuion)(p, a);
   return '<header class="top"><button class="icon" data-act="home" aria-label="Volver">' + ic("back") + "</button>" +
     '<input class="pname" id="f-name" data-field="name" value="' + esc(p.name) + '" aria-label="Nombre del video">' +
     '<button class="icon" data-act="menu" aria-label="Más opciones">' + ic("more") + "</button></header>" +
@@ -1119,6 +1399,7 @@ function tabGuion(p) {
   return '<section class="stack">' +
     '<label class="field"><span>Tema del video</span><input type="text" id="f-topic" data-field="topic" value="' + esc(p.topic) + '" placeholder="Ej: Cómo ahorré para mi primer departamento"></label>' +
     '<div class="field"><span>Narración</span><div class="seg"><button data-act="voice" data-v="propia" class="' + (p.voice !== "ia" ? "on" : "") + '">Mi voz</button><button data-act="voice" data-v="ia" class="' + (p.voice === "ia" ? "on" : "") + '">Voz IA</button></div></div>' +
+    '<div class="actions"><button class="btn" data-act="tplOpen">' + ic("frame") + (p.format && FORMATS[p.format] ? "Plantilla: " + FORMATS[p.format].name : "Armar con plantilla guiada") + '</button><button class="btn" data-act="hooksOpen">Ganchos guardados</button></div>' +
     '<div class="field"><div class="lbl-row"><span>Guión</span><span class="mono muted" id="wc">' + wcLabel(p) + "</span></div>" +
     '<textarea class="script" id="f-script" data-field="script" placeholder="Escribe o pega tu guión aquí, con tus palabras. La IA lo corrige y ordena después.">' + esc(p.script) + "</textarea></div>" +
     '<div class="actions"><button class="btn primary" data-act="fix"' + (S.busy.fix ? " disabled" : "") + ">" + ic("wand") + "Corregir y estructurar</button>" +
@@ -1128,7 +1409,40 @@ function tabGuion(p) {
       '<div class="sug-text">' + hl(sug.guion) + "</div>" +
       '<div class="actions"><button class="btn primary" data-act="applyFix">' + ic("check") + 'Aplicar</button><button class="btn ghost" data-act="dropFix">Descartar</button></div></div>' : "") +
     '<p class="hint">La corrección arregla ortografía y orden, respeta tus palabras y marca con <mark>Añade:</mark> dónde sumar una experiencia o dato tuyo. Complétalas antes de grabar.</p>' +
+    ((p.script || "").trim().length > 40 ? '<button class="btn sm ghost" data-act="saveHooks">' + ic("check") + "Guardar gancho y cierre en mi biblioteca</button>" : "") +
     "</section>";
+}
+
+/* --- Shorts --- */
+function tabShorts(p) {
+  const sh = p.shorts || [];
+  const cards = sh.map((s, i) => {
+    const w = (String(s.guion).match(/\S+/g) || []).length;
+    return '<div class="card"><div class="lbl-row"><h3 style="font-size:15px;color:var(--fg);letter-spacing:0">' + esc(s.titulo) + '</h3><span class="mono muted">≈' + Math.round(w / 2.5) + " s</span></div>" +
+      '<div class="sug-text" style="max-height:220px">' + esc(s.guion) + "</div>" +
+      (s.texto_miniatura ? '<p class="hint">Texto de miniatura: <b>' + esc(s.texto_miniatura) + "</b></p>" : "") +
+      '<div class="edgrid"><button class="btn sm" data-act="shortRec" data-i="' + i + '">' + ic("mic") + 'Grabar</button><button class="btn sm" data-act="shortCopy" data-i="' + i + '">' + ic("copy") + "Copiar</button>" +
+      '<button class="btn sm" data-act="shortThumb" data-i="' + i + '">' + ic("image") + 'Miniatura 9:16</button><button class="btn sm ghost danger" data-act="shortDel" data-i="' + i + '">Quitar</button></div></div>';
+  }).join("");
+  return '<section class="stack">' +
+    '<p class="hint">Cada video largo puede darte 2 o 3 Shorts. Atraen gente nueva al canal con el mismo trabajo.</p>' +
+    '<div class="actions"><button class="btn" data-act="shortsLocal">' + ic("frame") + 'Crear desde mis secciones</button><button class="btn primary" data-act="shortsAI"' + (S.busy.shorts ? " disabled" : "") + ">" + ic("wand") + "Escribir Shorts con IA</button></div>" +
+    busyUI("shorts") + aiNote() +
+    (cards || '<div class="empty"><p>Aún no hay Shorts para este video.</p></div>') +
+    '<p class="hint">"Grabar" abre el teleprompter con el texto del Short. La miniatura 9:16 usa el fondo y el color de tu miniatura principal.</p></section>';
+}
+function vertThumb(p, text) {
+  const W = 1080, H = 1920, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const c = cv.getContext("2d"), t = p.thumb || {}, accent = t.color || "#3EE6A0";
+  const bg = t.bgId && getImg(t.bgId);
+  if (bg) { const r = Math.max(W / bg.naturalWidth, H / bg.naturalHeight), w = bg.naturalWidth * r, h = bg.naturalHeight * r; c.drawImage(bg, (W - w) / 2, (H - h) / 2, w, h); }
+  else { const g = c.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#0a1626"); g.addColorStop(1, "#103a3a"); c.fillStyle = g; c.fillRect(0, 0, W, H); }
+  const g2 = c.createLinearGradient(0, H * 0.35, 0, H); g2.addColorStop(0, "rgba(0,0,0,0)"); g2.addColorStop(1, "rgba(0,0,0," + Math.min(0.95, (t.dark ?? 45) / 100 + 0.35) + ")");
+  c.fillStyle = g2; c.fillRect(0, 0, W, H);
+  const f = fitText(c, String(text || t.l1 || "TU TEXTO").toUpperCase(), W - 140, 210, 80, 3);
+  const y = H * 0.6; const hgt = drawLines(c, f, W / 2, y, "center", "#ffffff", "rgba(0,0,0,.85)");
+  c.fillStyle = accent; c.fillRect(W / 2 - 120, y + hgt + 30, 240, 16);
+  return cv;
 }
 
 /* --- Voz --- */
@@ -1169,7 +1483,8 @@ function tabVoz(p) {
       '<p class="hint">Para YouTube, tu voz clonada cuenta como voz IA. En videos de finanzas o salud conviene narrar con tu voz real.</p>' + aiNote("voice");
   }
   return '<section class="stack">' + seg + body + '<div class="sec-h"><h2>Tus audios</h2><span class="mono muted">' + takes.length + "</span></div>" + list +
-    '<p class="hint">Edita una toma para recortar, quitar silencios, limpiar ruido y nivelar volumen. Desde el editor la compartes directo a CapCut.</p></section>';
+    (takes.some(t => S.takes[t.id]) ? '<button class="btn" data-act="pvOpen">' + ic("play") + "Ver borrador del video con fotos y subtítulos</button>" : "") +
+    '<p class="hint">Edita una toma para recortar, quitar silencios, limpiar ruido, nivelar volumen y sacar los subtítulos .SRT. Desde el editor la compartes directo a CapCut.</p></section>';
 }
 
 /* --- Media --- */
@@ -1186,7 +1501,13 @@ function tabMedia(p) {
       (it.kind === "video" ? '<span class="vbadge">' + ic("video") + "</span>" : "") + (it.duration ? '<span class="dur">' + fmtDur(it.duration) + "</span>" : "") + "</button>" +
       '<button class="origin o-' + it.origin + '" data-act="origin" data-mid="' + it.id + '">' + ({ propio: "Propio", stock: "Stock", ia: "IA" })[it.origin] + "</button></div>";
   }).join("");
-  return '<section class="stack">' +
+  const shots = p.shots || []; const shotsDone = shots.filter(s => s.done).length;
+  const shotCard = '<div class="card"><div class="lbl-row"><h3>Lista de tomas</h3><span class="mono muted">' + shotsDone + " / " + shots.length + "</span></div>" +
+    (shots.length ? "<div>" + shots.map(s => '<label class="shot' + (s.done ? " done" : "") + '"><input type="checkbox" data-shot="' + s.id + '"' + (s.done ? " checked" : "") + '><span><span class="sec">' + esc(s.seccion || "TOMA") + "</span> " + esc(s.toma) + '</span><button class="x" data-act="rmShot" data-id="' + s.id + '" aria-label="Quitar toma">' + ic("x") + "</button></label>").join("") + "</div>"
+      : '<p class="hint">Qué grabar para cada parte del guión: tu pantalla, tus manos, tu escritorio, el lugar del que hablas.</p>') +
+    '<div class="row"><input type="text" id="f-shot" placeholder="Agregar una toma" enterkeyhint="done"><button class="btn" data-act="addShot">Agregar</button></div>' +
+    '<button class="btn" data-act="genShots"' + (S.busy.shots ? " disabled" : "") + ">" + ic("wand") + (shots.length ? "Rehacer la lista desde mi guión" : "Crear la lista desde mi guión") + "</button>" + busyUI("shots") + aiNote() + "</div>";
+  return '<section class="stack">' + shotCard +
     '<div class="card msum"><div class="lbl-row"><span>Origen del material</span><span class="mono muted">' + m.length + " archivos</span></div>" +
     '<div class="bar"><i class="o-propio" style="width:' + pct("propio") + '%;background:var(--oc)"></i><i class="o-stock" style="width:' + pct("stock") + '%;background:var(--oc)"></i><i class="o-ia" style="width:' + pct("ia") + '%;background:var(--oc)"></i></div>' +
     '<div class="legend-row"><span class="o-propio"><i></i>Propio ' + c("propio") + '</span><span class="o-stock"><i></i>Stock ' + c("stock") + '</span><span class="o-ia"><i></i>IA ' + c("ia") + "</span></div></div>" +
@@ -1335,7 +1656,14 @@ function tabPublicar(p, a) {
   const row = (state, title, sub) => '<div class="check"><span class="ck ' + state + '">' + (state === "ok" ? ic("check") : state === "warn" ? "!" : "") + "</span><b>" + title + "</b><p>" + sub + "</p></div>";
   const media = p.media || []; const takes = p.takes || [];
   const own = media.length ? Math.round(media.filter(m => m.origin === "propio").length / media.length * 100) : 0;
+  const stg = stageOf(p); const res = p.results || {};
+  const resCard = stg === "publicado" ? '<div class="card"><h3>Resultados a los 7 días</h3><div class="fields3">' +
+    [["views7", "Vistas"], ["retention", "Retención %"], ["ctr", "CTR %"]].map(([k, l]) => '<label class="field"><span>' + l + '</span><input type="text" inputmode="decimal" id="f-r-' + k + '" data-field="results.' + k + '" value="' + esc(res[k] || "") + '"></label>').join("") + "</div>" +
+    '<label class="field"><span>Qué aprendiste</span><textarea id="f-r-notes" data-field="results.notes" rows="3" placeholder="Ej: la miniatura con mi cara funcionó mejor">' + esc(res.notes || "") + "</textarea></label>" +
+    '<p class="hint">Los encuentras en YouTube Studio → Estadísticas del video. En “Mi canal” verás qué formatos te funcionan mejor.</p></div>' : "";
   return '<section class="stack">' +
+    '<div class="card"><h3>Etapa y fecha</h3><div class="chips">' + STAGES.map(([k, l]) => '<button class="chipbtn' + (stg === k ? " on" : "") + '" data-act="setStage" data-v="' + k + '">' + l + "</button>").join("") + "</div>" +
+    '<label class="field"><span>Fecha de publicación</span><input type="date" id="f-date" data-field="publishDate" value="' + esc(p.publishDate || "") + '"></label></div>' + resCard +
     '<div class="card"><h3>Antes de subir</h3><div>' +
     row(p.corrected ? "ok" : "", "Guión corregido", p.corrected ? "Listo." : "Usa “Corregir y estructurar” en la pestaña Guión.") +
     row(takes.length ? "ok" : "", "Narración grabada", takes.length ? takes.length + " audio(s) en la pestaña Voz." : "Graba o genera la voz en la pestaña Voz.") +
@@ -1370,6 +1698,37 @@ function renderSheet() {
       '<details><summary class="hint">Ver la instrucción</summary><textarea readonly rows="6" style="margin-top:8px;font-size:13px">' + esc(m.prompt) + "</textarea></details>" +
       '<label class="field"><span>Respuesta de Claude</span><textarea id="aiPaste" rows="7" placeholder="Pega aquí la respuesta completa">' + esc(m.text) + "</textarea></label>" +
       '<button class="btn primary" data-act="aiApply">' + ic("check") + "Aplicar respuesta</button>";
+  } else if (s.type === "tpl") {
+    const fmt = !s.pick && p.format && FORMATS[p.format] ? p.format : null;
+    if (!fmt) {
+      inner = '<div class="panel-h"><h3>Elige un formato</h3>' + close + "</div>" +
+        '<p class="hint">Cada formato te hace preguntas sobre tu experiencia. Con tus respuestas se arma el guión.</p>' +
+        Object.entries(FORMATS).map(([k, F]) => '<button class="idea" data-act="tplPick" data-v="' + k + '"><b style="text-transform:none">' + esc(F.name) + "</b><span>" + esc(F.desc) + "</span></button>").join("");
+    } else {
+      const F = FORMATS[fmt], ans = p.answers || {};
+      inner = '<div class="panel-h"><h3>' + esc(F.name) + "</h3>" + close + "</div>" +
+        '<p class="hint">Responde con tus palabras, como si se lo contaras a un amigo. Puedes dejar preguntas en blanco.</p>' +
+        F.q.map(([k, l]) => '<label class="field"><span>' + esc(l) + '</span><textarea rows="' + (k === "pasos" || k === "items" ? 5 : 3) + '" id="tq-' + k + '" data-tq="' + k + '">' + esc(ans[k] || "") + "</textarea></label>").join("") +
+        '<div class="actions"><button class="btn primary" data-act="tplBuild">' + ic("check") + 'Armar guión</button><button class="btn ghost" data-act="tplChange">Cambiar formato</button></div>' +
+        '<p class="hint">' + ((p.script || "").trim() ? "Reemplaza el guión actual. Puedes volver atrás con “Deshacer corrección”. " : "") + "Después usa “Corregir y estructurar” para pulirlo.</p>";
+    }
+  } else if (s.type === "hooks") {
+    const hs = settings().hooks || [];
+    inner = '<div class="panel-h"><h3>Ganchos guardados</h3>' + close + "</div>" +
+      (hs.length ? hs.map(h => '<div class="flag"><span><span class="kchip ' + (h.kind === "gancho" ? "k-grabacion" : "k-editada") + '">' + (h.kind === "gancho" ? "Gancho" : "Cierre") + "</span> " + esc(h.text) + '</span><span class="hint">De: ' + esc(h.from) + '</span><div class="actions"><button class="btn sm" data-act="hookCopy" data-id="' + h.id + '">' + ic("copy") + 'Copiar</button><button class="btn sm ghost danger" data-act="hookDel" data-id="' + h.id + '">Quitar</button></div></div>').join("")
+        : '<p class="hint">Aún no guardas ganchos. Cuando un guión te quede bien, toca “Guardar gancho y cierre en mi biblioteca”.</p>') +
+      '<p class="hint">Úsalos como referencia de estilo. Repetir la misma frase en muchos videos hace que el canal parezca plantilla.</p>';
+  } else if (s.type === "preview") {
+    const pv = S.pv; if (!pv) { S.sheet = null; el.hidden = true; return; }
+    pv.idx = -1;
+    const takes = (p.takes || []).filter(t => S.takes[t.id]);
+    const playing = pv.audio && !pv.audio.paused;
+    inner = '<div class="panel-h"><h3>Borrador del video</h3>' + close + "</div>" +
+      '<div class="pv-stage">' + (pv.imgs.length ? '<img id="pvImg" src="' + pv.imgs[0] + '" alt="">' : '<div class="pv-blank"></div>') + '<div class="pv-cap" id="pvCap"></div></div>' +
+      '<div class="meter"><i id="pvBar" style="width:0%;background:var(--accent)"></i></div>' +
+      '<div class="chips scrollx">' + takes.map(t => '<button class="chipbtn' + (t.id === pv.takeId ? " on" : "") + '" data-act="pvTake" data-id="' + t.id + '">' + esc(t.name) + "</button>").join("") + "</div>" +
+      '<div class="actions"><button class="btn primary" data-act="pvPlay">' + ic(playing ? "pause" : "play") + (playing ? "Pausa" : "Reproducir") + '</button><button class="btn" data-act="pvSrt">' + ic("dl") + "Subtítulos .srt</button></div>" +
+      '<p class="hint">' + (pv.imgs.length ? pv.imgs.length + " fotos repartidas a lo largo de la narración. " : "Sube fotos o videos en “Fotos y tomas” para verlos aquí. ") + "Es una vista previa para revisar ritmo y subtítulos; el montaje final lo haces en CapCut.</p>";
   } else if (s.type === "menu") {
     inner = '<div class="panel-h"><h3>' + esc(p.name) + "</h3>" + close + '</div><div class="menu-list"><button class="btn" data-act="dup">' + ic("copy") + 'Duplicar video</button><button class="btn danger" data-act="askDel">' + ic("x") + "Eliminar video</button></div>";
   } else if (s.type === "confirmDel") {
@@ -1377,7 +1736,7 @@ function renderSheet() {
       '<div class="actions"><button class="btn ghost" data-act="closeSheet">Cancelar</button><button class="btn primary" style="background:var(--bad);color:#fff" data-act="del">Eliminar</button></div>';
   } else if (s.type === "rec") {
     const r = S.rec || {};
-    const txt = cleanSpeech(p.script || "") ? hl((p.script || "").replace(/\[AÑADE:[^\]]*\]/g, "")) : "Escribe tu guión en la pestaña Guión para leerlo aquí mientras grabas.";
+    const txt = r.text ? esc(r.text) : cleanSpeech(p.script || "") ? hl((p.script || "").replace(/\[AÑADE:[^\]]*\]/g, "")) : "Escribe tu guión en la pestaña Guión para leerlo aquí mientras grabas.";
     const recording = !!r.mr;
     inner = '<div class="panel-h"><h3>Grabar narración</h3>' + (recording ? "" : close) + "</div>" +
       '<div class="tele" id="tele">' + txt + "</div>" +
@@ -1406,6 +1765,7 @@ function renderSheet() {
       '<p class="hint">Tip: toca la onda para mover el inicio o el fin más cercano. Cambiar la velocidad también sube o baja un poco el tono.</p>' +
       '<div class="actions"><button class="btn primary" data-act="auSave">' + ic("check") + 'Guardar como nueva toma</button></div>' +
       '<div class="actions"><button class="btn" data-act="auShare">' + ic("share") + 'Compartir (CapCut)</button><button class="btn" data-act="auWav">' + ic("dl") + 'Descargar WAV</button></div>' +
+      '<button class="btn" data-act="auSrt">' + ic("dl") + "Subtítulos .srt de esta toma</button>" +
       '<button class="btn danger" data-act="auDelete">Eliminar esta toma</button>';
   } else if (s.type === "media") {
     const meta = (p.media || []).find(m => m.id === s.mid); const b = (S.media[p.id] || {})[s.mid];
@@ -1520,7 +1880,7 @@ async function act(name, el) {
       const ta = $("#f-script"); if (ta) ta.focus(); break;
     }
     case "open": S.pid = d.id; S.view = "project"; S.tab = "guion"; render(); window.scrollTo(0, 0); break;
-    case "home": Player.stop(); listAudio.pause(); listPlaying = null; S.view = "home"; S.sheet = null; render(); window.scrollTo(0, 0); break;
+    case "home": Player.stop(); stopPreview(); listAudio.pause(); listPlaying = null; S.view = "home"; S.sheet = null; render(); window.scrollTo(0, 0); break;
     case "settings": S.view = "settings"; S.sheet = null; render(); window.scrollTo(0, 0); if (S.status === undefined) loadStatus().then(render); break;
     case "saveCode": { const v = ($("#f-code") || {}).value || ""; lsSet("vc_code", v.trim()); S.status = undefined; render(); await loadStatus(); render(); toast(S.status && S.status.ok ? "Conectado" : "No se pudo conectar"); break; }
     case "forgetClone": { const s = settings(); if (s.clone && s.voiceId === s.clone.id) { s.voiceId = ""; s.voiceName = ""; } delete s.clone; save("settings"); render(); break; }
@@ -1530,9 +1890,126 @@ async function act(name, el) {
       saveFile("vidcreator-respaldo-" + new Date().toISOString().slice(0, 10) + ".json", new Blob([data], { type: "application/json" })); break;
     }
     case "restore": $("#fileBackup").click(); break;
-    case "tab": Player.stop(); S.tab = d.t; render(); window.scrollTo(0, 0); break;
+    case "tab": Player.stop(); stopPreview(); S.tab = d.t; render(); window.scrollTo(0, 0); break;
     case "menu": S.sheet = { type: "menu" }; renderSheet(); break;
-    case "closeSheet": Player.stop(); if (S.rec && !S.rec.mr) S.rec = null; if (S.manual) { endManual(null); break; } S.sheet = null; S.ed = null; S.au = null; renderSheet(); render(); break;
+    case "closeSheet": Player.stop(); stopPreview(); if (S.rec && !S.rec.mr) S.rec = null; if (S.manual) { endManual(null); break; } S.sheet = null; S.ed = null; S.au = null; renderSheet(); render(); break;
+    /* tablero, calendario y canal */
+    case "homeView": S.homeView = d.v; render(); break;
+    case "stageFilter": S.stageFilter = d.v; render(); break;
+    case "addIdea": {
+      const inp = $("#f-idea"); const v = (inp && inp.value || "").trim();
+      if (!v) { toast("Escribe la idea primero."); break; }
+      const id = uid(); S.docs[id] = newProject({ name: v.slice(0, 90), stage: "idea" }); save(id, 50);
+      render(); toast("Idea guardada"); break;
+    }
+    case "suggestIdeas": {
+      const st = settings(); const niche = (st.niche || "").trim();
+      if (!niche) { toast("Escribe primero el tema de tu canal."); const n = $("#f-niche"); if (n) n.focus(); break; }
+      const existing = projects().filter(x => !x.example).map(x => x.name).slice(0, 30).join("; ");
+      const r = await askJSON("ideasCanal", "Pensando ideas para tu canal", promptIdeasCanal(niche, existing));
+      if (Array.isArray(r)) { S.ideaSug = r.filter(x => x && x.titulo).slice(0, 10).map(x => ({ titulo: String(x.titulo).slice(0, 90), angulo: String(x.angulo || ""), formato: FORMATS[x.formato] ? x.formato : "" })); render(); }
+      break;
+    }
+    case "addSug": {
+      const x = (S.ideaSug || [])[+d.i]; if (!x || x.added) break;
+      const id = uid(); S.docs[id] = newProject({ name: x.titulo, topic: x.angulo, format: x.formato || undefined, stage: "idea" }); save(id, 50);
+      x.added = true; render(); break;
+    }
+    case "calNav": { const [y, m] = (S.calMonth || todayISO().slice(0, 7)).split("-").map(Number); const dt = new Date(y, m - 1 + Number(d.d), 1); S.calMonth = isoOf(dt).slice(0, 7); render(); break; }
+    case "calDay": S.calDay = d.v; render(); break;
+    case "schedule": { const q = S.docs[d.id]; if (q) { q.publishDate = d.day; touch(q); save(d.id); render(); toast("Programado para el " + fmtDate(d.day)); } break; }
+    case "goal": settings().weeklyGoal = +d.v; save("settings"); render(); break;
+    case "hookCopy": { const h = (settings().hooks || []).find(x => x.id === d.id); if (h) copyText(h.text); break; }
+    case "hookDel": { const st = settings(); st.hooks = (st.hooks || []).filter(x => x.id !== d.id); save("settings"); if (S.sheet) renderSheet(); render(); break; }
+
+    /* guión guiado y ganchos */
+    case "tplOpen": S.sheet = { type: "tpl" }; renderSheet(); break;
+    case "tplPick": p.format = d.v; touch(p); save(p.id); S.sheet = { type: "tpl" }; renderSheet(); break;
+    case "tplChange": S.sheet = { type: "tpl", pick: true }; renderSheet(); break;
+    case "tplBuild": {
+      const txt = buildScript(p.format, p.answers || {});
+      if (!txt) { toast("Responde al menos una pregunta."); break; }
+      if ((p.script || "").trim()) p.scriptPrev = p.script;
+      p.script = txt; bumpStage(p, "guion"); touch(p); save(p.id);
+      S.sheet = null; S.tab = "guion"; render(); toast("Guión armado. Revísalo y luego toca Corregir y estructurar.");
+      break;
+    }
+    case "hooksOpen": S.sheet = { type: "hooks" }; renderSheet(); break;
+    case "saveHooks": {
+      const st = settings(); st.hooks = st.hooks || [];
+      const g = sectionText(p.script, "GANCHO") || ((cleanSpeech(p.script).match(/[^.!?]+[.!?]*/) || [""])[0]).trim();
+      const c = sectionText(p.script, "CIERRE");
+      let n = 0;
+      [["gancho", g], ["cierre", c]].forEach(([kind, text]) => {
+        text = String(text || "").trim().slice(0, 600);
+        if (text && !st.hooks.some(h => h.text === text)) { st.hooks.unshift({ id: uid(), kind, text, from: p.name, at: Date.now() }); n++; }
+      });
+      st.hooks = st.hooks.slice(0, 100); save("settings");
+      toast(n ? "Guardado en tu biblioteca" : "Ya estaba guardado"); break;
+    }
+
+    /* tomas */
+    case "addShot": {
+      const inp = $("#f-shot"); const v = (inp && inp.value || "").trim(); if (!v) break;
+      p.shots = p.shots || []; p.shots.push({ id: uid(), seccion: "TOMA", toma: v.slice(0, 140), done: false });
+      touch(p); save(p.id); render(); const ni = $("#f-shot"); if (ni) ni.focus(); break;
+    }
+    case "rmShot": p.shots = (p.shots || []).filter(s => s.id !== d.id); touch(p); save(p.id); render(); break;
+    case "genShots": {
+      if (!(p.script || "").trim()) { toast("Escribe tu guión primero."); break; }
+      const r = await askJSON("shots", "Armando la lista de tomas", promptShots(p));
+      if (Array.isArray(r)) { p.shots = r.filter(x => x && x.toma).slice(0, 15).map(x => ({ id: uid(), seccion: String(x.seccion || "TOMA").toUpperCase().slice(0, 12), toma: String(x.toma).slice(0, 140), tipo: String(x.tipo || ""), done: false })); touch(p); save(p.id); render(); }
+      break;
+    }
+
+    /* Shorts */
+    case "shortsLocal": {
+      const secs = sections(p.script || "").filter(s => s.name !== "INTRO");
+      if (!secs.length) { toast("Primero ordena tu guión con Corregir y estructurar o con una plantilla."); break; }
+      const base = p.title || p.name;
+      p.shorts = secs.map(s => { const words = cleanSpeech(s.text).split(/\s+/); return { titulo: (base + " · " + s.name.charAt(0) + s.name.slice(1).toLowerCase()).slice(0, 80), guion: words.slice(0, 120).join(" ") + (words.length > 120 ? "…" : ""), texto_miniatura: (p.thumb && p.thumb.l1) || "" }; });
+      touch(p); save(p.id); render(); toast("Shorts creados. Recórtalos o pídele a la IA que los mejore."); break;
+    }
+    case "shortsAI": {
+      if (!(p.script || "").trim()) { toast("Escribe tu guión primero."); break; }
+      const r = await askJSON("shorts", "Escribiendo Shorts", promptShorts(p));
+      if (Array.isArray(r)) { p.shorts = r.filter(x => x && x.guion).slice(0, 5).map(x => ({ titulo: String(x.titulo || "Short").slice(0, 80), guion: String(x.guion), texto_miniatura: String(x.texto_miniatura || "") })); touch(p); save(p.id); render(); }
+      break;
+    }
+    case "shortCopy": { const s = (p.shorts || [])[+d.i]; if (s) copyText(s.guion); break; }
+    case "shortDel": p.shorts = (p.shorts || []).filter((_, i) => i !== +d.i); touch(p); save(p.id); render(); break;
+    case "shortThumb": {
+      const s = (p.shorts || [])[+d.i]; if (!s) break;
+      const blob = await toBlob(vertThumb(p, s.texto_miniatura || p.thumb.l1), "image/png");
+      if (blob) saveFile(slug(s.titulo) + "-short.png", blob); break;
+    }
+    case "shortRec": {
+      const s = (p.shorts || [])[+d.i]; if (!s) break;
+      listAudio.pause(); listPlaying = null;
+      S.rec = { speed: 22, scroll: true, acc: 0, text: s.guion, label: "Short · " + s.titulo.slice(0, 40) };
+      S.sheet = { type: "rec" }; renderSheet(); break;
+    }
+
+    /* etapa y resultados */
+    case "setStage": p.stage = d.v; if (d.v === "publicado" && !p.publishDate) p.publishDate = todayISO(); touch(p); save(p.id); render(); break;
+
+    /* borrador y subtítulos */
+    case "pvOpen": listAudio.pause(); listPlaying = null; openPreview(); break;
+    case "pvTake": openPreview(d.id); break;
+    case "pvPlay": { const pv = S.pv; if (!pv) break; if (pv.audio.paused) pv.audio.play().catch(() => toast("No se pudo reproducir.")); else pv.audio.pause(); break; }
+    case "pvSrt": {
+      const pv = S.pv; if (!pv || !pv.cues.length) { toast("No hay texto para los subtítulos. Revisa el guión."); break; }
+      const t = (p.takes || []).find(x => x.id === pv.takeId);
+      saveFile(slug((p.title || p.name) + "-" + (t ? t.name : "")) + ".srt", new Blob([toSRT(pv.cues)], { type: "text/plain" })); break;
+    }
+    case "auSrt": {
+      const st = S.au; const t = (p.takes || []).find(x => x.id === st.takeId);
+      const cues = makeCues(speechText(p, t), st.x);
+      if (!cues.length) { toast("No hay texto para los subtítulos. Revisa el guión."); break; }
+      saveFile(slug((p.title || p.name) + "-" + (t ? t.name : "")) + ".srt", new Blob([toSRT(cues)], { type: "text/plain" }));
+      toast("Subtítulos listos. En CapCut: Texto → Importar subtítulos. Ajusta los tiempos si hace falta."); break;
+    }
+
     case "aiCopy": if (S.manual) copyText(S.manual.prompt); break;
     case "aiImg": if (S.manual && S.manual.images) shareFile(slug(p.title || p.name) + "-miniatura.jpg", S.manual.images[0]); break;
     case "aiApply": {
@@ -1705,8 +2182,11 @@ document.addEventListener("click", e => {
 });
 
 let bannerT;
-document.addEventListener("input", e => {
+const onInput = e => {
   const el = e.target;
+  if (el.dataset.tq) { const q = cur(); if (q) { q.answers = q.answers || {}; q.answers[el.dataset.tq] = el.value; touch(q); save(q.id, 800); } return; }
+  if (el.dataset.setting) { settings()[el.dataset.setting] = el.value; save("settings", 800); return; }
+  if (el.dataset.shot) { const q = cur(); const s = q && (q.shots || []).find(x => x.id === el.dataset.shot); if (s) { s.done = el.checked; const lb = el.closest(".shot"); if (lb) lb.classList.toggle("done", s.done); touch(q); save(q.id); } return; }
   if (el.id === "aiPaste" && S.manual) { S.manual.text = el.value; return; }
   if (el.id === "teleSpeed" && S.rec) { S.rec.speed = +el.value; const s = el.parentElement.querySelector(".mono"); if (s) s.textContent = el.value; return; }
   if (el.dataset.au && S.au) {
@@ -1725,11 +2205,14 @@ document.addEventListener("input", e => {
   }
   const f = el.dataset.field; if (!f) return;
   const p = cur(); if (!p) return;
-  if (f.startsWith("thumb.")) { p.thumb[f.slice(6)] = f === "thumb.dark" ? +el.value : el.value; drawThumb(); const c = $("#l1c"); if (c) c.textContent = wordsOf(p.thumb.l1) + " / 4 palabras"; }
-  else p[f] = el.value;
+  if (f.includes(".")) {
+    const [a, b] = f.split("."); p[a] = p[a] || {}; p[a][b] = f === "thumb.dark" ? +el.value : el.value;
+    if (a === "thumb") { drawThumb(); const c = $("#l1c"); if (c) c.textContent = wordsOf(p.thumb.l1) + " / 4 palabras"; }
+  } else p[f] = el.value;
   touch(p); save(p.id, 700);
   if (f === "script") {
     const w = $("#wc"); if (w) w.textContent = wcLabel(p);
+    if (stageOf(p) === "idea" && (el.value.match(/\S+/g) || []).length >= 50) p.stage = "guion";
     clearTimeout(bannerT);
     bannerT = setTimeout(() => {
       const slot = $("#alertSlot"); const pp = cur(); if (!slot || !pp) return;
@@ -1741,6 +2224,13 @@ document.addEventListener("input", e => {
     const len = el.value.length; const t = $("#tlen"); if (t) t.textContent = len + " / 100";
     const m = $("#tmeter"); if (m) { m.style.width = Math.min(100, len) + "%"; m.style.background = len === 0 ? "var(--line)" : len <= 60 ? "var(--ok)" : len <= 80 ? "var(--warn)" : "var(--bad)"; }
   }
+};
+document.addEventListener("input", onInput);
+document.addEventListener("change", e => { if (e.target.type === "date") onInput(e); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter" || !e.target.id) return;
+  const map = { "f-idea": "addIdea", "f-shot": "addShot" };
+  if (map[e.target.id]) { e.preventDefault(); act(map[e.target.id], e.target); }
 });
 
 $("#fileMedia").addEventListener("change", async e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) { await addFiles(fs); render(); } });

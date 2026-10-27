@@ -14,6 +14,14 @@ Se instala como app (PWA) desde el navegador. Tus videos, fotos y audios quedan 
 | `api/tts.js`, `api/voices.js`, `api/clone.js` | Conectan con ElevenLabs (voces IA y copia de tu voz) |
 | `api/status.js`, `lib/auth.js` | Revisan la conexión y protegen tus claves con un código |
 
+## Qué hace
+
+- **Inicio:** meta semanal, banco de ideas (con sugerencias de IA según el tema de tu canal), tablero por etapa (Idea → Guión → Grabado → Editado → Publicado), calendario de publicación y "Mi canal" con salud del canal, resultados y biblioteca de ganchos.
+- **Guión:** plantillas guiadas (historia personal, tutorial, lista, error que cometí, comparación), corrección con IA y guardado de ganchos.
+- **Voz:** teleprompter, editor de audio, subtítulos .SRT para CapCut, voces IA y borrador del video con fotos y subtítulos.
+- **Fotos y tomas:** lista de tomas a grabar, fotos y videos con su origen, editor de fotos.
+- **Miniatura, Títulos, Shorts** (2 o 3 Shorts por video, con miniatura 9:16), **Originalidad** y **Publicar** (etapa, fecha, checklist, descripción y resultados a los 7 días).
+
 ## Modo gratis
 
 La app funciona sin ninguna clave. Grabar y editar tu voz, fotos, miniatura, alerta de originalidad básica y checklist son gratis. Sin `ANTHROPIC_API_KEY`, cada botón de IA abre "Usar con Claude": copias la instrucción, la pegas en la app de Claude, y pegas la respuesta de vuelta en VidCreator. Las claves de abajo son opcionales, para que todo sea automático.
