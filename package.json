@@ -1,0 +1,8 @@
+{
+  "name": "vidcreator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "App para preparar videos de YouTube: guión, voz, fotos, miniatura, títulos y alerta de originalidad.",
+  "engines": { "node": ">=18" }
+}
