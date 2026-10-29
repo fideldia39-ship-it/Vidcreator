@@ -26,6 +26,11 @@ Se instala como app (PWA) desde el navegador. Tus videos, fotos y audios quedan 
 - **Plan de 30 días:** defines tus pilares y la app agenda los videos en el calendario.
 - **3 variantes de miniatura** para la función “Probar y comparar” de YouTube.
 - **Bienvenida** en el primer uso y **tema claro u oscuro** en Ajustes.
+- **Camino a la monetización:** barras de suscriptores y horas de visualización contra las metas de YouTube (500/3.000 y 1.000/4.000), con el tiempo estimado según tu ritmo.
+- **Respaldo en tu Google Drive:** copia privada de tus textos en una carpeta que solo la app puede ver. Requiere activar “Google Drive API” en tu proyecto de Google Cloud.
+- **Subtítulos editables:** ajuste a las pausas reales de tu voz, corrección de texto y tiempos, y transcripción opcional dentro del teléfono (descarga ~80 MB la primera vez).
+- **Retención por video:** curva de audiencia con la zona donde más gente se va y la parte del guión que corresponde.
+- **Revisor de ganchos**, **series para subir las horas**, **tarjeta “Hoy”** con recordatorios y archivo de calendario (.ics) con alarmas, y **revisión de políticas** de YouTube antes de subir.
 - **Aviso de versión nueva:** cuando se publica un cambio aparece el botón Actualizar.
 
 ## Pruebas

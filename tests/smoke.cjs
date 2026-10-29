@@ -21,17 +21,32 @@ const dom = new JSDOM(html, {
       "youtube/v3/channels": { items: [{ id: "UC1", snippet: { title: "Canal de Prueba", thumbnails: {} }, statistics: { subscriberCount: "1520", viewCount: "48000", videoCount: "2" }, contentDetails: { relatedPlaylists: { uploads: "UU1" } } }] },
       "youtube/v3/playlistItems": { items: [{ contentDetails: { videoId: "v1" } }, { contentDetails: { videoId: "v2" } }] },
       "youtube/v3/videos": { items: [
-        { id: "v1", snippet: { title: "Cómo ordenar tus gastos en 20 minutos", publishedAt: "2026-09-01T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "3200", likeCount: "210", commentCount: "31" } },
-        { id: "v2", snippet: { title: "Mi primer error con la tarjeta", publishedAt: "2026-09-15T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "900", likeCount: "40", commentCount: "5" } }] },
+        { id: "v1", snippet: { title: "Cómo ordenar tus gastos en 20 minutos", publishedAt: "2026-09-01T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "3200", likeCount: "210", commentCount: "31" }, contentDetails: { duration: "PT10M" } },
+        { id: "v2", snippet: { title: "Mi primer error con la tarjeta", publishedAt: "2026-09-15T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "900", likeCount: "40", commentCount: "5" }, contentDetails: { duration: "PT8M30S" } }] },
       "filters=video": { columnHeaders: [{ name: "views" }, { name: "averageViewPercentage" }, { name: "averageViewDuration" }], rows: [[1250, 47.36, 96]] },
       "dimensions=video": { columnHeaders: [{ name: "video" }, { name: "views" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }, { name: "subscribersGained" }], rows: [["v1", 800, 900, 95, 52.1, 12], ["v2", 300, 200, 60, 38.4, 2]] }
     };
-    w.fetch = async (url) => {
-      url = String(url);
+    // Drive simulado: guarda el último respaldo en memoria.
+    let driveData = null;
+    const retRows = Array.from({ length: 100 }, (_, i) => [(i + 1) / 100, i < 20 ? 1 - i * 0.01 : i < 28 ? 0.8 - (i - 20) * 0.06 : 0.32 - (i - 28) * 0.002]);
+    w.fetch = async (url, opts) => {
+      url = String(url); opts = opts || {};
+      const ok = j => ({ ok: true, status: 200, json: async () => j });
+      if (url.includes("googleapis.com/upload/drive")) { const m = /\r\n\r\n(\{"app"[\s\S]*?\})\r\n--vcb/.exec(opts.body || ""); driveData = m ? JSON.parse(m[1]) : { bad: true }; return ok({ id: "f1" }); }
+      if (url.includes("drive/v3/files?spaces")) return ok({ files: driveData ? [{ id: "f1", modifiedTime: "2026-10-29T00:00:00Z" }] : [] });
+      if (url.includes("drive/v3/files/f1?alt=media")) return ok(driveData);
+      if (url.includes("creatorContentType")) {
+        const q = new URL(url).searchParams, days = (new Date(q.get("endDate")) - new Date(q.get("startDate"))) / 86400000, metric = q.get("metrics");
+        const rows = metric === "views" ? [["SHORTS", 40000], ["VIDEO_ON_DEMAND", 5000]] : days > 300 ? [["SHORTS", 9000], ["VIDEO_ON_DEMAND", 120000]] : [["SHORTS", 1000], ["VIDEO_ON_DEMAND", 12000]];
+        return ok({ columnHeaders: [{ name: "creatorContentType" }, { name: metric }], rows });
+      }
+      if (url.includes("subscribersGained,subscribersLost")) return ok({ columnHeaders: [{ name: "subscribersGained" }, { name: "subscribersLost" }], rows: [[90, 10]] });
+      if (url.includes("elapsedVideoTimeRatio")) return ok({ columnHeaders: [{ name: "elapsedVideoTimeRatio" }, { name: "audienceWatchRatio" }], rows: retRows });
       const key = Object.keys(yt).find(k => url.includes(k));
-      if (url.includes("googleapis.com") && key) return { ok: true, status: 200, json: async () => yt[key] };
+      if (url.includes("googleapis.com") && key) return ok(yt[key]);
       return { ok: false, status: 404, json: async () => ({}) };
     };
+    w.__drive = () => driveData;
     w.google = { accounts: { oauth2: { initTokenClient: o => ({ requestAccessToken: () => setTimeout(() => o.callback({ access_token: "tok", expires_in: 3600 }), 5) }), revoke: () => {} } } };
     w.URL.createObjectURL = () => "blob:x";
     w.scrollTo = () => {};
@@ -139,6 +154,91 @@ const check = (label, cond) => results.push([label, !!cond]);
   click('[data-act="ytResults"]'); await wait(150);
   const res = w.eval("cur().results");
   check("YouTube: trae vistas y retención a 7 días", res && res.views7 === "1250" && res.retention === "47.4");
+
+
+  // ---- mejoras 1.7 ----
+  click('[data-act="home"]'); await wait(20); click('[data-act="homeView"][data-v="canal"]'); await wait(30);
+  check("monetización: camino y metas", shown("Camino a la monetización") && shown("Nivel 1") && shown("Nivel 2"));
+  check("monetización: horas sin Shorts (2.000 h)", shown("2.000 / 3.000"));
+  check("monetización: suscriptores 1.520 de 1.000", shown("1.520 / 1.000"));
+  check("monetización: ritmo semanal", shown("a este ritmo") || shown("Meta cumplida"));
+  check("Drive: respaldo automático al actualizar", w.__drive() && w.__drive().app === "vidcreator" && Object.keys(w.__drive().docs).length > 2);
+  const before = w.eval("Object.keys(S.docs).filter(k => S.docs[k].kind === 'project').length");
+  w.eval("(() => { const k = Object.keys(S.docs).find(k => S.docs[k].kind === 'project' && S.docs[k].example); delete S.docs[k]; })()");
+  const restored = await w.eval("driveRestore()");
+  check("Drive: restaurar trae el video borrado", restored === 1 && w.eval("Object.keys(S.docs).filter(k => S.docs[k].kind === 'project').length") === before);
+  click('[data-act="settings"]'); await wait(40);
+  check("Ajustes: respaldo en Drive", shown("Respaldo en tu Google Drive") && shown("Guardar en Drive"));
+  click('[data-act="driveBackup"]'); await wait(120);
+  check("Drive: guardar manual deja fecha", w.eval("!!settings().driveAt"));
+  click('[data-act="home"]'); await wait(20);
+
+  // series (modo gratis)
+  click('[data-act="homeView"][data-v="canal"]'); await wait(30);
+  check("series: tarjeta", shown("Series para subir tus horas"));
+  click('[data-act="seriesAI"]'); await wait(40);
+  type("#aiPaste", JSON.stringify([{ serie: "Mis errores con la tarjeta", por_que: "Tu video de errores retuvo más", videos: [{ titulo: "El error de pagar el mínimo", angulo: "mi caso real" }, { titulo: "Cómo salí del mínimo", angulo: "pasos que seguí" }, { titulo: "Lo que haría distinto", angulo: "reflexión" }] }]));
+  click('[data-act="aiApply"]'); await wait(40);
+  check("series: propuesta visible", shown("Mis errores con la tarjeta") && shown("El error de pagar el mínimo"));
+  click('[data-act="seriesAdd"]'); await wait(40);
+  check("series: se agregan como ideas", w.eval("projects().filter(q => /Serie «Mis errores/.test(q.topic)).length") === 3);
+
+  // recordatorios
+  const ics = w.eval("makeICS(projects())");
+  check("calendario: archivo .ics con alarmas", ics.startsWith("BEGIN:VCALENDAR") && ics.includes("Publicar: Video plan") && ics.includes("BEGIN:VALARM") && ics.includes("\r\n"));
+  click('[data-act="homeView"][data-v="tablero"]'); await wait(30);
+  check("Hoy: tarjeta con recordatorios", shown("Agregar mis fechas al calendario"));
+
+  // gancho
+  const hk = w.eval(`hookCheck({ script: "[GANCHO]\\nHola a todos y bienvenidos, en este video te voy a mostrar la clave del éxito.\\n[DESARROLLO]\\nTexto." })`);
+  const hk2 = w.eval(`hookCheck({ script: "[GANCHO]\\nPerdí 800 mil pesos en una semana por un error que cometí con mi tarjeta.\\n[DESARROLLO]\\nTexto." })`);
+  check("gancho: detecta saludo y relleno", hk && hk.items.find(i => i.l === "Cómo empieza").st === "bad" && hk.items.find(i => i.l === "Frases de relleno").st === "bad");
+  check("gancho: premia dato y experiencia propia", hk2 && hk2.score > hk.score && hk2.items.find(i => i.l === "Dato concreto").st === "ok");
+
+  // políticas
+  const pol = w.eval(`policyCheck({ script: "Invierte y gana dinero fácil, garantizado.", title: "NO VAS A CREER ESTO!!", description: "Usa mi código de descuento", voice: "ia", media: [{ origin: "ia" }], music: { id: "m" } })`);
+  const stOf = l => pol.find(i => i.l === l).st;
+  check("políticas: promesas, voz IA, clickbait, promoción, IA sin declarar", stOf("Promesas de dinero") === "bad" && stOf("Voz IA en finanzas") === "bad" && stOf("Título engañoso") === "warn" && stOf("Promoción pagada") === "warn" && stOf("Contenido sintético") === "warn");
+
+  // ajuste de subtítulos a las pausas
+  const cuesOk = w.eval(`(() => {
+    const sr = 8000, sp = n => Float32Array.from({ length: n }, (_, i) => 0.3 * Math.sin(i / 3)), si = n => new Float32Array(n);
+    const parts = [sp(sr * 5), si(sr * 0.8), sp(sr * 9), si(sr * 0.8), sp(sr * 4), si(sr * 0.8), sp(sr * 7)].map(d => ({ data: d, sr }));
+    const x = AU.concat(parts, 0);
+    const chunks = ["a".repeat(50) + ".", "b".repeat(90) + ".", "c".repeat(40) + ".", "d".repeat(70) + "."];
+    const c = timeChunks(chunks, x), pauses = [5.4, 15.2, 20.0];
+    let mono = true; for (let i = 1; i < c.length; i++) if (c[i].a < c[i - 1].a + 0.25) mono = false;
+    return { n: c.length, mono, d: [c[1].a - pauses[0], c[2].a - pauses[1], c[3].a - pauses[2]] };
+  })()`);
+  check("subtítulos: cortes en las pausas reales", cuesOk.n === 4 && cuesOk.mono && cuesOk.d.every(v => Math.abs(v) < 0.6));
+
+  // editor de subtítulos
+  w.eval(`(() => { const p = cur(); p.takes = [{ id: "t1", name: "Prueba", kind: "grabacion", dur: 10 }]; S.pv = { takeId: "t1", imgs: [], dur: 10, idx: -1, audio: new Audio(), cues: [{ a: 0, b: 4, text: "Hola mundo" }, { a: 4, b: 8, text: "Segunda frase" }] }; S.sheet = { type: "preview" }; renderSheet(); })()`);
+  await wait(20); click('[data-act="cqOpen"]'); await wait(20);
+  check("subtítulos: editor abre", shown("Revisar subtítulos") && shown("Hola mundo"));
+  type('[data-cq="0"]', "Hola a todos"); click('[data-act="cqNudge"][data-i="1"][data-d="0.3"]'); await wait(10);
+  click('[data-act="cqSave"]'); await wait(30);
+  const tk = w.eval("cur().takes[0]");
+  check("subtítulos: se guardan editados", tk.cues && tk.cues[0].text === "Hola a todos" && Math.abs(tk.cues[1].a - 4.3) < 0.01 && tk.cuesDur === 10);
+  const reused = w.eval(`cuesFor(cur(), cur().takes[0], { data: new Float32Array(80000), sr: 8000 })[0].text`);
+  check("subtítulos: se reutilizan si el audio no cambió", reused === "Hola a todos");
+  w.eval("S.sheet = null; S.pv = null; renderSheet()");
+
+  // retención y revisión del gancho en el video vinculado
+  click('[data-act="stageFilter"][data-v="todos"]'); await wait(20);
+  [...doc.querySelectorAll('[data-act="open"]')].find(c => c.textContent.includes("Ejemplo")).dispatchEvent(new w.MouseEvent("click", { bubbles: true })); await wait(40);
+  click('[data-act="tab"][data-t="publicar"]'); await wait(30);
+  check("publicar: revisión de políticas", shown("Revisión de políticas"));
+  click('[data-act="ytRetention"]'); await wait(150);
+  check("retención: curva y mayor caída", shown("Siguen a los 30 s") && shown("Mayor caída") && shown("Llegan al final"));
+  const ins = w.eval("retentionInsights(cur())");
+  check("retención: caída entre 20% y 30% y 30 s", ins && ins.dropFrom >= 0.15 && ins.dropFrom <= 0.3 && Math.abs(ins.first30 - 0.9) < 0.1);
+  click('[data-act="tab"][data-t="guion"]'); await wait(30);
+  check("guión: revisar mi gancho", shown("Revisar mi gancho") && shown("Pedir 3 direcciones"));
+  click('[data-act="hookAI"]'); await wait(40);
+  type("#aiPaste", JSON.stringify({ puntaje: 60, problemas: ["Empieza con saludo"], direcciones: [{ enfoque: "empezar por el error", como: "Abre con el error que cometiste" }, { enfoque: "una pregunta", como: "Pregunta qué harías" }, { enfoque: "el resultado", como: "Abre con el monto" }] }));
+  click('[data-act="aiApply"]'); await wait(40);
+  check("gancho: direcciones de la IA", shown("empezar por el error") && shown("Abre con el monto"));
 
   const failed = results.filter(r => !r[1]);
   results.forEach(([l, ok]) => console.log((ok ? "OK   " : "FAIL ") + l));
