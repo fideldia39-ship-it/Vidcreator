@@ -31,6 +31,12 @@ Se instala como app (PWA) desde el navegador. Tus videos, fotos y audios quedan 
 - **Subtítulos editables:** ajuste a las pausas reales de tu voz, corrección de texto y tiempos, y transcripción opcional dentro del teléfono (descarga ~80 MB la primera vez).
 - **Retención por video:** curva de audiencia con la zona donde más gente se va y la parte del guión que corresponde.
 - **Revisor de ganchos**, **series para subir las horas**, **tarjeta “Hoy”** con recordatorios y archivo de calendario (.ics) con alarmas, y **revisión de políticas** de YouTube antes de subir.
+- **Navegación nueva:** barra inferior en el teléfono y barra lateral en el computador (Videos, Calendario, Mi canal, Investigar, Ajustes).
+- **Investigar:** busca un tema en YouTube y mira vistas, duración, canales chicos que despegaron y ángulos propios con IA.
+- **Ingresos y Tu año:** registro de ingresos por fuente y mes con meta, y videos publicados por mes contra tu meta anual.
+- **Audiencia:** trae los comentarios de tus últimos videos, detecta las preguntas y propone videos.
+- **Mi estilo:** pega tus mejores textos y la IA imita tu tono. **Qué miniatura gana:** compara el CTR por variante.
+- **Sincronización entre aparatos** usando tu Google Drive (textos, y opcionalmente fotos, audios y videos de hasta 40 MB).
 - **Aviso de versión nueva:** cuando se publica un cambio aparece el botón Actualizar.
 
 ## Pruebas

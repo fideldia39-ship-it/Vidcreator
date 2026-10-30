@@ -1,5 +1,5 @@
 // Service worker: deja la app abrirse sin conexión. La IA y la voz IA sí necesitan internet.
-const CACHE = "vidcreator-v7";
+const CACHE = "vidcreator-v8";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

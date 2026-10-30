@@ -21,20 +21,33 @@ const dom = new JSDOM(html, {
       "youtube/v3/channels": { items: [{ id: "UC1", snippet: { title: "Canal de Prueba", thumbnails: {} }, statistics: { subscriberCount: "1520", viewCount: "48000", videoCount: "2" }, contentDetails: { relatedPlaylists: { uploads: "UU1" } } }] },
       "youtube/v3/playlistItems": { items: [{ contentDetails: { videoId: "v1" } }, { contentDetails: { videoId: "v2" } }] },
       "youtube/v3/videos": { items: [
-        { id: "v1", snippet: { title: "Cómo ordenar tus gastos en 20 minutos", publishedAt: "2026-09-01T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "3200", likeCount: "210", commentCount: "31" }, contentDetails: { duration: "PT10M" } },
+        { id: "v1", snippet: { title: "Cómo ordenar tus gastos en 20 minutos", publishedAt: "2026-09-01T12:00:00Z", channelId: "UC9", channelTitle: "Plata Simple", thumbnails: {} }, statistics: { viewCount: "3200", likeCount: "210", commentCount: "31" }, contentDetails: { duration: "PT10M" } },
         { id: "v2", snippet: { title: "Mi primer error con la tarjeta", publishedAt: "2026-09-15T12:00:00Z", thumbnails: {} }, statistics: { viewCount: "900", likeCount: "40", commentCount: "5" }, contentDetails: { duration: "PT8M30S" } }] },
       "filters=video": { columnHeaders: [{ name: "views" }, { name: "averageViewPercentage" }, { name: "averageViewDuration" }], rows: [[1250, 47.36, 96]] },
       "dimensions=video": { columnHeaders: [{ name: "video" }, { name: "views" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }, { name: "subscribersGained" }], rows: [["v1", 800, 900, 95, 52.1, 12], ["v2", 300, 200, 60, 38.4, 2]] }
     };
     // Drive simulado: guarda el último respaldo en memoria.
-    let driveData = null;
+    let driveData = null; const driveBlobs = {};
+    const readBlob = b => new Promise(res => { const fr = new w.FileReader(); fr.onload = () => res(String(fr.result)); fr.readAsText(b); });
+    w.__driveBlobs = driveBlobs; w.__setDrive = d => { driveData = d; };
     const retRows = Array.from({ length: 100 }, (_, i) => [(i + 1) / 100, i < 20 ? 1 - i * 0.01 : i < 28 ? 0.8 - (i - 20) * 0.06 : 0.32 - (i - 28) * 0.002]);
     w.fetch = async (url, opts) => {
       url = String(url); opts = opts || {};
       const ok = j => ({ ok: true, status: 200, json: async () => j });
-      if (url.includes("googleapis.com/upload/drive")) { const m = /\r\n\r\n(\{"app"[\s\S]*?\})\r\n--vcb/.exec(opts.body || ""); driveData = m ? JSON.parse(m[1]) : { bad: true }; return ok({ id: "f1" }); }
+      if (url.includes("googleapis.com/upload/drive")) {
+        const text = typeof opts.body === "string" ? opts.body : await readBlob(opts.body);
+        const m = /\r\n\r\n(\{"app"[\s\S]*?\})\r\n--vcb/.exec(text);
+        if (m) { driveData = JSON.parse(m[1]); return ok({ id: "f1" }); }
+        const nm = /"name":"(blob-[^"]+)"/.exec(text); if (nm) { driveBlobs[nm[1]] = text.length; return ok({ id: "bl-" + nm[1] }); }
+        driveData = { bad: true }; return ok({ id: "f1" });
+      }
+      if (url.includes("pageSize=1000")) return ok({ files: (driveData ? [{ id: "f1", name: "vidcreator-respaldo.json" }] : []).concat(Object.keys(driveBlobs).map(n => ({ id: "bl-" + n, name: n, size: String(driveBlobs[n]) }))) });
       if (url.includes("drive/v3/files?spaces")) return ok({ files: driveData ? [{ id: "f1", modifiedTime: "2026-10-29T00:00:00Z" }] : [] });
       if (url.includes("drive/v3/files/f1?alt=media")) return ok(driveData);
+      if (url.includes("drive/v3/files/bl-")) return { ok: true, status: 200, blob: async () => new w.Blob(["abc"], { type: "audio/webm" }) };
+      if (url.includes("v3/search")) return ok({ items: [{ id: { videoId: "v1" } }, { id: { videoId: "v2" } }] });
+      if (url.includes("channels?part=statistics&id=")) return ok({ items: [{ id: "UC9", statistics: { subscriberCount: "800" } }] });
+      if (url.includes("commentThreads")) return ok({ items: [{ snippet: { topLevelComment: { snippet: { textDisplay: "¿Cómo hiciste para ahorrar el primer mes?", likeCount: 7 } } } }, { snippet: { topLevelComment: { snippet: { textDisplay: "Muy buen video", likeCount: 2 } } } }] });
       if (url.includes("creatorContentType")) {
         const q = new URL(url).searchParams, days = (new Date(q.get("endDate")) - new Date(q.get("startDate"))) / 86400000, metric = q.get("metrics");
         const rows = metric === "views" ? [["SHORTS", 40000], ["VIDEO_ON_DEMAND", 5000]] : days > 300 ? [["SHORTS", 9000], ["VIDEO_ON_DEMAND", 120000]] : [["SHORTS", 1000], ["VIDEO_ON_DEMAND", 12000]];
@@ -168,13 +181,13 @@ const check = (label, cond) => results.push([label, !!cond]);
   const restored = await w.eval("driveRestore()");
   check("Drive: restaurar trae el video borrado", restored === 1 && w.eval("Object.keys(S.docs).filter(k => S.docs[k].kind === 'project').length") === before);
   click('[data-act="settings"]'); await wait(40);
-  check("Ajustes: respaldo en Drive", shown("Respaldo en tu Google Drive") && shown("Guardar en Drive"));
+  check("Ajustes: sincronizar con Drive", shown("Sincronizar con Google Drive") && shown("Sincronizar ahora") && shown("Mi estilo"));
   click('[data-act="driveBackup"]'); await wait(120);
   check("Drive: guardar manual deja fecha", w.eval("!!settings().driveAt"));
   click('[data-act="home"]'); await wait(20);
 
   // series (modo gratis)
-  click('[data-act="homeView"][data-v="canal"]'); await wait(30);
+  click('[data-act="homeView"][data-v="canal"]'); await wait(30); click('[data-act="canalTab"][data-v="audiencia"]'); await wait(30);
   check("series: tarjeta", shown("Series para subir tus horas"));
   click('[data-act="seriesAI"]'); await wait(40);
   type("#aiPaste", JSON.stringify([{ serie: "Mis errores con la tarjeta", por_que: "Tu video de errores retuvo más", videos: [{ titulo: "El error de pagar el mínimo", angulo: "mi caso real" }, { titulo: "Cómo salí del mínimo", angulo: "pasos que seguí" }, { titulo: "Lo que haría distinto", angulo: "reflexión" }] }]));
@@ -239,6 +252,67 @@ const check = (label, cond) => results.push([label, !!cond]);
   type("#aiPaste", JSON.stringify({ puntaje: 60, problemas: ["Empieza con saludo"], direcciones: [{ enfoque: "empezar por el error", como: "Abre con el error que cometiste" }, { enfoque: "una pregunta", como: "Pregunta qué harías" }, { enfoque: "el resultado", como: "Abre con el monto" }] }));
   click('[data-act="aiApply"]'); await wait(40);
   check("gancho: direcciones de la IA", shown("empezar por el error") && shown("Abre con el monto"));
+
+
+  // ---- mejoras 1.8 ----
+  click('[data-act="home"]'); await wait(30);
+  check("navegación inferior con 5 secciones", doc.querySelectorAll("#nav button").length === 5 && !doc.querySelector("#nav").hidden);
+  click('#nav [data-act="homeView"][data-v="canal"]'); await wait(30); click('[data-act="canalTab"][data-v="resumen"]'); await wait(30);
+  check("canal: tarjeta Tu año", shown("Tu año"));
+  // investigar
+  click('#nav [data-act="homeView"][data-v="investigar"]'); await wait(30);
+  type("#f-research", "cómo ordenar mis gastos"); click('[data-act="rsSearch"]'); await wait(150);
+  check("investigar: resultados con vistas", shown("Videos sobre") && shown("Cómo ordenar tus gastos en 20 minutos") && shown("Vistas típicas"));
+  check("investigar: detecta canal chico que despegó", shown("Canal chico, buen resultado"));
+  click('[data-act="rsNote"][data-i="0"]'); await wait(30);
+  check("investigar: anota el tema como idea", w.eval("projects().some(q => /Referencia: «/.test(q.topic))"));
+  click('[data-act="rsAngles"]'); await wait(40);
+  type("#aiPaste", JSON.stringify([{ titulo: "Mi sistema de 3 sobres", angulo: "mi método real", formato: "historia" }])); click('[data-act="aiApply"]'); await wait(40);
+  check("investigar: ángulos propios", shown("Mi sistema de 3 sobres"));
+  // ingresos
+  click('#nav [data-act="homeView"][data-v="canal"]'); await wait(30); click('[data-act="canalTab"][data-v="ingresos"]'); await wait(30);
+  type("#f-iamt", "35.000"); click('[data-act="incSrc"][data-v="afiliados"]'); type("#f-iamt", "35.000"); click('[data-act="incAdd"]'); await wait(30);
+  check("ingresos: registra y suma", shown("$35.000") && w.eval("chan().income.length") === 1 && w.eval("chan().income[0].src") === "afiliados");
+  type("#f-igoal", "100000"); await wait(900);
+  check("ingresos: meta mensual", w.eval("num(chan().incomeGoal)") === 100000);
+  click('[data-act="incDel"]'); await wait(30);
+  check("ingresos: se puede quitar", w.eval("chan().income.length") === 0);
+  // comentarios
+  click('[data-act="canalTab"][data-v="audiencia"]'); await wait(30); click('[data-act="cmLoad"]'); await wait(150);
+  check("comentarios: detecta preguntas", shown("comentarios leídos") && shown("Cómo hiciste para ahorrar el primer mes") && !shown("Muy buen video"));
+  click('[data-act="cmAI"]'); await wait(40);
+  type("#aiPaste", JSON.stringify({ temas: ["Ahorro inicial"], dudas: ["¿Cómo empezar?"], ideas: [{ titulo: "Mi primer mes ahorrando", angulo: "con números reales", formato: "historia" }] })); click('[data-act="aiApply"]'); await wait(40);
+  click('[data-act="cmAdd"]'); await wait(30);
+  check("comentarios: ideas de la audiencia al banco", w.eval("projects().some(q => /pedido por tu audiencia/.test(q.topic))"));
+  // estilo
+  w.eval('chan().style = "Hola, yo perdí plata por no revisar mis gastos."');
+  check("estilo: se agrega a las instrucciones de la IA", w.eval('promptFix({ script: "x", topic: "t", voice: "propia" }).includes("Muestras de cómo escribe") && promptTitles({ script: "x", topic: "t" }).includes("perdí plata")'));
+  w.eval("delete chan().style");
+  check("estilo: sin muestras no agrega nada", !w.eval('promptFix({ script: "x", topic: "t", voice: "propia" }).includes("Muestras de cómo escribe")'));
+  // prueba de miniaturas
+  const tt = w.eval(`thumbTestCard([{ results: { thumbVar: "v1", ctr: "4,0" } }, { results: { thumbVar: "v2", ctr: "7,5" } }, { results: { thumbVar: "v2", ctr: "6,5" } }])`);
+  check("miniaturas: gana la variante con más CTR", tt.includes("Qué miniatura gana") && tt.indexOf("Variante 2") < tt.indexOf("Variante 1") && tt.includes("7.0% CTR"));
+  // fusión y sincronización
+  const mg = w.eval(`(() => {
+    S.docs.A = newProject({ name: "A local" }); S.docs.A.updatedAt = 100; S.docs.B = newProject({ name: "B local" }); S.docs.B.updatedAt = 100;
+    const r = mergeDocs({ docs: { A: Object.assign(newProject({ name: "A remoto" }), { updatedAt: 200 }), C: Object.assign(newProject({ name: "C remoto" }), { updatedAt: 50 }),
+      settings: { deleted: { B: 150 }, channels: [{ id: "otro", name: "Canal extra", hooks: [] }] } } });
+    return [r.added, r.updated, r.removed, S.docs.A.name, !!S.docs.B, S.docs.C && S.docs.C.name, channels().some(c => c.id === "otro")];
+  })()`);
+  check("fusión: nuevo, actualizado más reciente y borrado", mg[0] === 1 && mg[1] === 1 && mg[2] === 1 && mg[3] === "A remoto" && mg[4] === false && mg[5] === "C remoto" && mg[6] === true);
+  const keepLocal = w.eval(`(() => { S.docs.A.updatedAt = 900; const r = mergeDocs({ docs: { A: Object.assign(newProject({ name: "A viejo" }), { updatedAt: 300 }) } }); return [r.updated, S.docs.A.name]; })()`);
+  check("fusión: la versión local más nueva se conserva", keepLocal[0] === 0 && keepLocal[1] === "A remoto");
+  const del = w.eval(`(() => { settings().deleted = { Z: 5000 }; S.docs.Z = Object.assign(newProject({ name: "Z" }), { updatedAt: 100 }); const r = mergeDocs({ docs: {} }); return [r.removed, !!S.docs.Z]; })()`);
+  check("fusión: respeta lo que borraste en este aparato", del[0] === 1 && del[1] === false);
+  w.eval(`(() => { S.docs.SY = newProject({ name: "Con audio", takes: [{ id: "tk-sync", name: "Toma", kind: "grabacion" }] }); })()`);
+  await w.eval(`DB.put("blobs", "tk-sync", new Blob(["abc"], { type: "audio/webm" }))`);
+  const up = await w.eval("driveSync(null, true)");
+  check("sincronizar: sube el archivo que falta en Drive", up.up >= 1 && Object.keys(w.__driveBlobs).includes("blob-tk-sync"));
+  await w.eval(`DB.del("blobs", "tk-sync")`);
+  const down = await w.eval("driveSync(null, true)");
+  const back = await w.eval(`DB.get("blobs", "tk-sync")`);
+  check("sincronizar: baja el archivo que falta aquí", down.down === 1 && back && back.size === 3);
+  check("sincronizar: mensaje claro", w.eval(`syncText({ added: 2, updated: 1, removed: 0, up: 1, down: 0, skipped: 0 })`) === "Sincronizado: 2 video(s) nuevos, 1 actualizados, 1 archivo(s) subidos");
 
   const failed = results.filter(r => !r[1]);
   results.forEach(([l, ok]) => console.log((ok ? "OK   " : "FAIL ") + l));
